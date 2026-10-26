@@ -23,11 +23,6 @@ from guitar_tap.views.utilities import palette
 if TYPE_CHECKING:
     from .tap_tone_measurement import TapToneMeasurement
 
-# The plate/brace phase colours, by role.
-_FL = palette.Role.MATERIAL_LONGITUDINAL
-_FC = palette.Role.MATERIAL_CROSS
-_FLC = palette.Role.MATERIAL_FLC
-
 
 
 def microphone_not_found_message(recorded: str, current: "str | None") -> str:
@@ -693,23 +688,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.set_frozen_spectrum(np.array([]), np.array([]))
             from .material_tap_phase import MaterialTapPhase
             self.material_tap_phase = MaterialTapPhase.COMPLETE
-            # Build and publish the per-phase spectra so the canvas redraws.
-            # Format mirrors tap_tone_analyzer_spectrum_capture.py: (label, color, freqs, mags)
-            spectra = []
-            if self.longitudinal_spectrum is not None:
-                l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
-            if self.cross_spectrum is not None:
-                c_mags, c_freqs = self.cross_spectrum
-                spectra.append(("Cross-grain (fC)", _FC, list(c_freqs), list(c_mags)))
-            if self.flc_spectrum is not None:
-                f_mags, f_freqs = self.flc_spectrum
-                spectra.append(("Diagonal (fLC)", _FLC, list(f_freqs), list(f_mags)))
-            self.set_material_spectra(spectra)
         else:
-            # Guitar measurement: clear any stale material spectra
-            # from a previously loaded plate/brace measurement so the canvas redraws.
-            self.set_material_spectra([])
             # A loaded measurement is complete. Mark the phase complete (mirrors the
             # Swift fix) so the display guard (frozen empty & phase != complete) doesn't
             # blank a guitar spectrum loaded while the previous type was plate/brace.
@@ -1238,7 +1217,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         if was_comparing:
             self.comparisonChanged.emit(False)
 
-    def save_comparison(
+    def make_comparison_measurement(
         self,
         measurement_name: "str | None" = None,
         notes: "str | None" = None,
@@ -1246,23 +1225,21 @@ class TapToneAnalyzerMeasurementManagementMixin:
         max_freq: "float | None" = None,
         min_db: "float | None" = None,
         max_db: "float | None" = None,
-    ) -> None:
-        """Save the current live comparison as a TapToneMeasurement with comparisonEntries.
+        timestamp: "str | None" = None,
+    ) -> "TapToneMeasurement | None":
+        """The current comparison as the measurement it would be saved as, without saving it — what
+        ``save_comparison`` saves and the main view's exports report. Its comparisonEntries hold a
+        snapshot of the current comparison data. The chart's range (``min_freq`` … ``max_db``) is
+        saved with it and shown when it is loaded, as a measurement's; ``None`` uses the range a new
+        comparison shows. *timestamp* is the comparison's time; now when None. None when there is no
+        comparison.
 
-        Creates a new TapToneMeasurement whose comparisonEntries hold a snapshot of the
-        current comparison data, then appends it to saved_measurements and persists. The chart's
-        range (``min_freq`` … ``max_db``) is saved with it and shown when it is loaded, as a
-        measurement's; ``None`` uses the range a new comparison shows.
-
-        Mirrors Swift TapToneAnalyzer.saveComparison(measurementName:notes:)
-        (TapToneAnalyzer+MeasurementManagement.swift).
+        Mirrors Swift TapToneAnalyzer.makeComparisonMeasurement.
         """
-        import uuid as _uuid
-
         from .tap_tone_measurement import ComparisonEntry, TapToneMeasurement
 
         if not self._comparison_data:
-            return
+            return None
 
         entries: list = []
         for entry in self._comparison_data:
@@ -1285,7 +1262,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         from .display_range import spanning_range
         default_range = spanning_range(self.comparison_snapshots)
         if default_range is None:
-            return
+            return None
         m = TapToneMeasurement.create(
             peaks=[],
             measurement_name=measurement_name,
@@ -1298,6 +1275,28 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 float(max_db if max_db is not None else default_range[3]),
             ),
         )
+        if timestamp is not None:
+            m.timestamp = timestamp
+        return m
+
+    def save_comparison(
+        self,
+        measurement_name: "str | None" = None,
+        notes: "str | None" = None,
+        min_freq: "float | None" = None,
+        max_freq: "float | None" = None,
+        min_db: "float | None" = None,
+        max_db: "float | None" = None,
+    ) -> None:
+        """Save the current live comparison (``make_comparison_measurement``), appended to
+        saved_measurements and persisted.
+
+        Mirrors Swift TapToneAnalyzer.saveComparison(measurementName:notes:)
+        (TapToneAnalyzer+MeasurementManagement.swift).
+        """
+        m = self.make_comparison_measurement(measurement_name, notes, min_freq, max_freq, min_db, max_db)
+        if m is None:
+            return
         self.saved_measurements.append(m)
         # The comparison on screen is now this saved one: its exports show its date and are named by
         # it. Mirrors Swift saveComparison.

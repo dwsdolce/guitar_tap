@@ -165,11 +165,10 @@ class TapToneAnalyzer(
     tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)
     # Emitted when comparison overlay data changes (True=entering, False=leaving).
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)
-    # Emitted when per-phase material spectra change for plate/brace measurements.
-    # Payload: list of (label, (r,g,b), freqs, mags) tuples — empty list clears the overlay.
-    # Mirrors Swift @Published var longitudinalSpectrum / crossSpectrum / flcSpectrum
-    # which TapToneAnalysisView+SpectrumViews observes to build materialSpectra.
-    materialSpectraChanged: QtCore.Signal = QtCore.Signal(list)
+    # Emitted when longitudinal_spectrum, cross_spectrum or flc_spectrum is assigned. Mirrors Swift's
+    # @Published longitudinalSpectrum / crossSpectrum / flcSpectrum, which TapToneAnalysisView observes to
+    # rebuild overlaySpectra.
+    phaseSpectraChanged: QtCore.Signal = QtCore.Signal()
     # Emitted when savedMeasurements list changes (mirrors Swift @Published var savedMeasurements).
     savedMeasurementsChanged: QtCore.Signal = QtCore.Signal()
     # Emitted when frequency range changes (fmin, fmax).
@@ -458,9 +457,6 @@ class TapToneAnalyzer(
         # Distinct from _current_input_level_db (inputLevelDB/RMS).
         self._current_peak_magnitude_db: float = -100.0
 
-        # ── Per-phase material spectra ────────────────────────────────────
-        self._material_spectra: list = []
-
         # ── Comparison overlay data ───────────────────────────────────────
         self.comparison_labels: list = []
         self._comparison_data: list = []
@@ -485,10 +481,11 @@ class TapToneAnalyzer(
         # REVIEWING_CROSS -> (optional FLC phases) -> COMPLETE. Mirrors materialTapPhase.
         self.material_tap_phase: "_MTP" = _MTP.NOT_STARTED
         # Averaged FFT spectrum from each material tap, once its phase completes (None
-        # before). Mirrors longitudinalSpectrum / crossSpectrum / flcSpectrum.
-        self.longitudinal_spectrum = None
-        self.cross_spectrum = None
-        self.flc_spectrum = None
+        # before), as (magnitudes, frequencies). Mirrors longitudinalSpectrum / crossSpectrum /
+        # flcSpectrum; assigning one emits phaseSpectraChanged.
+        self._longitudinal_spectrum = None
+        self._cross_spectrum = None
+        self._flc_spectrum = None
         # The identified peak of each material phase — the dominant peak of its averaged spectrum,
         # stored when the phase completes. These are a material measurement's peaks: there is no
         # per-peak selection and no other material peak state (all_peaks / selected_peak_ids are
@@ -1776,6 +1773,39 @@ class TapToneAnalyzer(
         self.displayModeChanged.emit(value)
 
     @property
+    def longitudinal_spectrum(self):
+        """The longitudinal phase's averaged spectrum, (magnitudes, frequencies), or None. Mirrors Swift
+        ``longitudinalSpectrum``."""
+        return self._longitudinal_spectrum
+
+    @longitudinal_spectrum.setter
+    def longitudinal_spectrum(self, value) -> None:
+        self._longitudinal_spectrum = value
+        self.phaseSpectraChanged.emit()
+
+    @property
+    def cross_spectrum(self):
+        """The cross-grain phase's averaged spectrum, (magnitudes, frequencies), or None. Mirrors Swift
+        ``crossSpectrum``."""
+        return self._cross_spectrum
+
+    @cross_spectrum.setter
+    def cross_spectrum(self, value) -> None:
+        self._cross_spectrum = value
+        self.phaseSpectraChanged.emit()
+
+    @property
+    def flc_spectrum(self):
+        """The FLC phase's averaged spectrum, (magnitudes, frequencies), or None. Mirrors Swift
+        ``flcSpectrum``."""
+        return self._flc_spectrum
+
+    @flc_spectrum.setter
+    def flc_spectrum(self, value) -> None:
+        self._flc_spectrum = value
+        self.phaseSpectraChanged.emit()
+
+    @property
     def is_comparing(self) -> bool:
         """True when in COMPARISON display mode.
 
@@ -1807,21 +1837,6 @@ class TapToneAnalyzer(
             return None
         from .display_range import spanning_range
         return spanning_range(self.comparison_snapshots)
-
-    def set_material_spectra(self, spectra: list) -> None:
-        """Set per-phase plate/brace spectra and notify observers.
-
-        Mirrors Swift: setting longitudinalSpectrum / crossSpectrum / flcSpectrum
-        @Published properties on TapToneAnalyzer, which causes TapToneAnalysisView
-        to rebuild its materialSpectra computed property and pass it to SpectrumView.
-
-        Parameters
-        ----------
-        spectra:
-            List of (label, (r,g,b), freqs, mags) tuples.  Pass [] to clear.
-        """
-        self._material_spectra = spectra
-        self.materialSpectraChanged.emit(spectra)
 
     # ------------------------------------------------------------------ #
     # Mode Override

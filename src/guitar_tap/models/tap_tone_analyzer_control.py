@@ -10,15 +10,9 @@ from __future__ import annotations
 import time as _time
 
 from guitar_tap.utilities.logging import gt_log
-from guitar_tap.views.utilities import palette
 
 from . import field_precision as fp
 from .detection_state import DetectionState
-
-# The plate/brace phase colours, by role.
-_FL = palette.Role.MATERIAL_LONGITUDINAL
-_FC = palette.Role.MATERIAL_CROSS
-_FLC = palette.Role.MATERIAL_FLC
 
 
 class TapToneAnalyzerControlMixin:
@@ -772,8 +766,6 @@ class TapToneAnalyzerControlMixin:
             self.tap_progress = 0.0
             capture_phase = _MTP.CAPTURING_LONGITUDINAL
             status_msg = "Ready for fL tap — tap again"
-            # longitudinalSpectrum = nil → materialSpectra returns [] → live curve restored.
-            self.set_material_spectra([])
 
         elif phase == _MTP.REVIEWING_CROSS:
             # Clear cross data only — longitudinal stays.
@@ -786,12 +778,6 @@ class TapToneAnalyzerControlMixin:
             self.tap_progress = float(l_count) / float(self.total_plate_taps)
             capture_phase = _MTP.CAPTURING_CROSS
             status_msg = "Ready for fC tap — tap again"
-            # crossSpectrum = nil → materialSpectra returns [L only] → show longitudinal overlay.
-            spectra = []
-            if self.longitudinal_spectrum:
-                l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
-            self.set_material_spectra(spectra)
 
         elif phase == _MTP.REVIEWING_FLC:
             # Clear FLC data only — L and C stay.
@@ -808,15 +794,6 @@ class TapToneAnalyzerControlMixin:
             self.tap_progress = float(lc_count) / float(self.total_plate_taps)
             capture_phase = _MTP.CAPTURING_FLC
             status_msg = "Ready for fLC tap — tap again"
-            # flcSpectrum = nil → materialSpectra returns [L, C] → show both overlays.
-            spectra = []
-            if self.longitudinal_spectrum:
-                l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
-            if self.cross_spectrum:
-                c_mags, c_freqs = self.cross_spectrum
-                spectra.append(("Cross-grain (fC)", _FC, list(c_freqs), list(c_mags)))
-            self.set_material_spectra(spectra)
 
         else:
             gt_log(f"⚠️ redo_current_phase called in unexpected phase: {phase}")
@@ -873,14 +850,7 @@ class TapToneAnalyzerControlMixin:
 
         self._emit_peaks_array(self.peaks_above_peak_min)
 
-        l_mags, l_freqs = self.longitudinal_spectrum
-        c_mags, c_freqs = self.cross_spectrum
-        self.set_material_spectra([
-            ("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)),
-            ("Cross-grain (fC)",  _FC, list(c_freqs), list(c_mags)),
-        ])
-
-        fl = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
+        fl =self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
         fc = self.selected_cross_peak.frequency if self.selected_cross_peak else 0.0
         self.plateAnalysisComplete.emit(fl, fc, 0.0)
 
@@ -903,16 +873,7 @@ class TapToneAnalyzerControlMixin:
 
         self._emit_peaks_array(self.peaks_above_peak_min)
 
-        l_mags, l_freqs = self.longitudinal_spectrum
-        c_mags, c_freqs = self.cross_spectrum
-        f_mags, f_freqs = self.flc_spectrum
-        self.set_material_spectra([
-            ("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)),
-            ("Cross-grain (fC)",  _FC, list(c_freqs), list(c_mags)),
-            ("Diagonal (fLC)",              _FLC, list(f_freqs), list(f_mags)),
-        ])
-
-        l_freq = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
+        l_freq =self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
         c_freq = self.selected_cross_peak.frequency if self.selected_cross_peak else 0.0
         f_freq = self.selected_flc_peak.frequency if self.selected_flc_peak else 0.0
         self.plateAnalysisComplete.emit(l_freq, c_freq, f_freq)
@@ -982,9 +943,6 @@ class TapToneAnalyzerControlMixin:
         self.selected_longitudinal_peak = None
         self.selected_cross_peak = None
         self.selected_flc_peak = None
-        # All phase spectra cleared — mirrors Swift's @Published vars becoming nil,
-        # which causes materialSpectra to return [] and SpectrumView to restore the live curve.
-        self.set_material_spectra([])
 
     # ------------------------------------------------------------------ #
     # Plate / brace tap sequence entry points

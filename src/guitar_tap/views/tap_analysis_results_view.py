@@ -379,8 +379,8 @@ def pdf_report_data_from_measurement(
     min_freq = display_snap.min_freq if display_snap else 50.0
     max_freq = display_snap.max_freq if display_snap else 1000.0
 
-    # ── Filter peaks to display range ─────────────────────────────────────
-    range_peaks = [p for p in m.peaks if min_freq <= p.frequency <= max_freq]
+    # ── The peaks the measurement shows (at or above its Peak Min) in its display range ──
+    range_peaks = [p for p in m.peaks_above_peak_min if min_freq <= p.frequency <= max_freq]
     selected_ids = m.effective_selected_peak_ids
 
     # ── Mode classification ───────────────────────────────────────────────
@@ -976,18 +976,18 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     story.append(Spacer(1, 14))
 
     # --- PEAKS TABLE ------------------------------------------------------
-    # Swift peaksSection: VStack(spacing 6) { "Detected Peaks" 13 bold, the header (10 bold, padded 3
+    # Swift peaksSection: VStack(spacing 6) { "Selected Peaks" 13 bold, the header (10 bold, padded 3
     # vertically and 6 horizontally, 2 below), one row per peak (10, padded 2 / 6) }.
     # Role colors — the material roles, light. Mirrors Swift peakRoleCell.
     _ROLE_BLUE   = _hex(_light(palette.Role.MATERIAL_LONGITUDINAL))
     _ROLE_ORANGE = _hex(_light(palette.Role.MATERIAL_CROSS))
     _ROLE_PURPLE = _hex(_light(palette.Role.MATERIAL_FLC))
 
-    story.append(_text("Detected Peaks", 13, bold=True))
+    story.append(_text("Selected Peaks", 13, bold=True))
     story.append(Spacer(1, 6))
 
     if not visible_peaks:
-        story.append(_text("No peaks detected in this measurement.", 11, color=SECONDARY))
+        story.append(_text("No selected peaks in view.", 11, color=SECONDARY))
     else:
         # Column widths mirror Swift's .frame widths (90 · 80 · 80, then Mode, or Q 70 + Role), the
         # first widened by the row's 6 pt leading padding.
@@ -1167,7 +1167,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         # -- Plate Properties ---------------------------------------------
         # Swift plateSection: VStack(spacing 10) { title 13 bold, two property columns, GLC row,
         # ratios, Overall Quality }.
-        # (fL / fC / fLC are inputs, shown in the Detected Peaks table -- not repeated here.)
+        # (fL / fC / fLC are inputs, shown in the Selected Peaks table -- not repeated here.)
         story.append(_text("Plate Properties", 13, bold=True))
         story.append(Spacer(1, 10))
         story.append(_two_columns(
@@ -1218,7 +1218,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             story += _separator()
 
         # -- Brace Properties ---------------------------------------------
-        # (fL is an input, shown in the Detected Peaks table -- not repeated here.)
+        # (fL is an input, shown in the Selected Peaks table -- not repeated here.)
         story.append(_text("Brace Properties", 13, bold=True))
         story.append(Spacer(1, 10))
         story.append(_two_columns(
@@ -1346,7 +1346,7 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
         return None
 
     # Build comparison_spectra list matching the format expected by make_exportable_spectrum_view
-    # when passed as material_spectra (each with frequencies, magnitudes, color, label).
+    # when passed as overlay_spectra (each with frequencies, magnitudes, color, label).
     comparison_spectra = []
     for index, entry in enumerate(entries):
         color = palette.rgb(palette.comparison_role(index, entry.label), Scheme.LIGHT)
@@ -1374,7 +1374,7 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
         peaks=[],
         # A comparison's entries need not be of one guitar type: no mode lines.
         show_mode_boundaries=False,
-        material_spectra=comparison_spectra,
+        overlay_spectra=comparison_spectra,
         date_label=date_label,
         chart_title=chart_title,
         type_label="Comparison",
@@ -1443,7 +1443,7 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
                               if measurement.spectrum_snapshot is not None
                               and measurement.spectrum_snapshot.measurement_type
                               else "Generic Guitar"),
-        material_spectra=comparison_spectra,
+        overlay_spectra=comparison_spectra,
         date_label=date_label,
         chart_title=chart_title,
     )

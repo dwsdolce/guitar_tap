@@ -53,15 +53,9 @@ from PySide6.QtCore import Slot
 
 from guitar_tap.utilities.logging import gt_log
 from guitar_tap.utilities.new_uuid import new_uuid
-from guitar_tap.views.utilities import palette
 
 from . import field_precision as fp
 from .detection_state import DetectionState
-
-# The plate/brace phase colours, by role.
-_FL = palette.Role.MATERIAL_LONGITUDINAL
-_FC = palette.Role.MATERIAL_CROSS
-_FLC = palette.Role.MATERIAL_FLC
 
 
 class TapToneAnalyzerSpectrumCaptureMixin:
@@ -1551,14 +1545,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             gt_log(f"✅ Brace measurement complete: fL={avg_peak.frequency} Hz")
             # Emit final peaks.
             self._emit_peaks_array(self.peaks_above_peak_min)
-            # Emit the longitudinal spectrum for display — mirrors Swift's @Published
-            # longitudinalSpectrum being set, which causes TapToneAnalysisView.materialSpectra
-            # (a computed property) to return [("Longitudinal (fL)", blue, ...)] and
-            # SpectrumView to render the blue overlay waveform.
-            l_mags, l_freqs = self.longitudinal_spectrum
-            self.set_material_spectra([
-                ("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)),
-            ])
             self.plateAnalysisComplete.emit(avg_peak.frequency, 0.0, 0.0)
         elif self.mic.is_playing_file:
             # File playback: auto-advance L → C without pausing at the review state.
@@ -1577,10 +1563,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.detection_state = DetectionState.LISTENING
             self._set_status_message("File: fL complete, capturing fC...")
             gt_log("📂 File playback: auto-advancing L → C")
-            l_mags, l_freqs = self.longitudinal_spectrum
-            self.set_material_spectra([
-                ("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)),
-            ])
         else:
             # Plate: pause at review state — user must press Accept to continue or Redo to re-tap.
             # Emit longitudinal peaks now — mirrors Swift's single currentPeaks assignment.
@@ -1590,13 +1572,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_status_message(
                 f"fL: {fp.string(avg_peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz \u2014 Accept to continue or Redo to re-tap"
             )
-            # Show longitudinal overlay — mirrors Swift's @Published longitudinalSpectrum
-            # causing materialSpectra to return [("Longitudinal (fL)", .blue, ...)] which
-            # SpectrumView renders instead of the primary curve (exclusive: no live curve shown).
-            l_mags, l_freqs = self.longitudinal_spectrum
-            self.set_material_spectra([
-                ("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)),
-            ])
 
         # Notify spectrum update (no peaksChanged here — each branch above emits exactly once).
         self.spectrumUpdated.emit(
@@ -1688,17 +1663,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 f"fC: {fp.string(avg_peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz \u2014 Accept to continue or Redo to re-tap"
             )
 
-        # Show longitudinal + cross overlays — mirrors Swift's @Published crossSpectrum
-        # causing materialSpectra to return L + C series (SpectrumView replaces primary curve).
-        spectra = []
-        if self.longitudinal_spectrum:
-            l_mags, l_freqs = self.longitudinal_spectrum
-            spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
-        if self.cross_spectrum:
-            c_mags, c_freqs = self.cross_spectrum
-            spectra.append(("Cross-grain (fC)", _FC, list(c_freqs), list(c_mags)))
-        self.set_material_spectra(spectra)
-
     # ------------------------------------------------------------------ #
     # _handle_flc_gated_progress
     # Mirrors Swift handleFlcGatedProgress(magnitudes:frequencies:dominantPeak:)
@@ -1756,7 +1720,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         if self.mic.is_playing_file:
             # File playback: auto-complete without pausing at the review state.
             # Reuse existing finalise helper which resolves peaks, emits signals,
-            # sets .complete, and updates spectra overlays.
+            # and sets .complete.
             self._finalise_plate_with_flc()
             gt_log("📂 File playback: FLC complete, measurement done")
         else:
@@ -1767,18 +1731,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_status_message(
                 f"fLC: {fp.string(avg_peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz \u2014 Accept to complete or Redo to re-tap"
             )
-        # Show longitudinal + cross + FLC overlays — mirrors Swift's @Published flcSpectrum
-        # causing materialSpectra to return L + C + FLC series (replaces primary curve).
-        spectra = []
-        if self.longitudinal_spectrum:
-            l_mags, l_freqs = self.longitudinal_spectrum
-            spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
-        if self.cross_spectrum:
-            c_mags, c_freqs = self.cross_spectrum
-            spectra.append(("Cross-grain (fC)", _FC, list(c_freqs), list(c_mags)))
-        f_mags, f_freqs = self.flc_spectrum
-        spectra.append(("Diagonal (fLC)", _FLC, list(f_freqs), list(f_mags)))
-        self.set_material_spectra(spectra)
         # Mirrors Swift handleFlcGatedProgress terminal log:
         # gtLog("📊 FLC review: L=… C=… FLC=… Hz")
         gt_log(

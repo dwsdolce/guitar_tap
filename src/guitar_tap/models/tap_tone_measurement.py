@@ -547,6 +547,50 @@ class TapToneMeasurement:
             return {p.id for p in self.peaks}
         return set(self.selected_peak_ids)
 
+    # @parity model/export-peaks tests=test/export-peaks
+    @property
+    def peaks_above_peak_min(self) -> list:
+        """The peaks the measurement shows when it is loaded, and so the peaks its image and report
+        show: a guitar's at or above its Peak Min (all of them for a file saved without one), read as
+        loading reads it; a plate's or brace's identified peaks.
+
+        Mirrors Swift ``TapToneMeasurement.peaksAbovePeakMin``.
+        """
+        if self.is_material or self.peak_min_threshold is None:
+            return list(self.peaks)
+        val = float(self.peak_min_threshold)
+        peak_min = val if val < 0 else val - 100
+        return [p for p in self.peaks if p.magnitude >= peak_min]
+
+    @property
+    def detected_peaks_in_view(self) -> list:
+        """A guitar's detected peaks in view: its peaks at or above Peak Min (``peaks_above_peak_min``)
+        within the saved range — the export header's "Detected Peaks: N". Empty for a plate or brace, which
+        has no detected peaks apart from its selected ones.
+
+        Mirrors Swift ``TapToneMeasurement.detectedPeaksInView``.
+        """
+        snap = self.spectrum_snapshot
+        if self.is_material or snap is None:
+            return []
+        return [p for p in self.peaks_above_peak_min if snap.min_freq <= p.frequency <= snap.max_freq]
+
+    @property
+    def report_peaks(self) -> list:
+        """The peaks the report's Selected Peaks table lists, low to high: the selected peaks
+        (``effective_selected_peak_ids``) at or above Peak Min (``peaks_above_peak_min``) within the saved
+        range. The image's Selected Peaks Summary lists the same peaks.
+
+        Mirrors Swift ``TapToneMeasurement.reportPeaks``.
+        """
+        snap = self.spectrum_snapshot or self.longitudinal_snapshot or self.cross_snapshot
+        if snap is None:
+            return []
+        selected = self.effective_selected_peak_ids
+        return sorted((p for p in self.peaks_above_peak_min
+                       if p.id in selected and snap.min_freq <= p.frequency <= snap.max_freq),
+                      key=lambda p: p.frequency)
+
     @property
     def tap_tone_ratio(self) -> float | None:
         """The Top-to-Air frequency ratio, a key quality indicator for guitar tap-tone analysis.

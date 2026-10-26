@@ -172,7 +172,7 @@ class ExportableSpectrumChart:
         selected_flc_peak_id: str | None = None,              # ID of the peak selected as the FLC (diagonal) mode.
         mode_overrides: dict | None = None,     # Per-peak user-assigned mode overrides. Empty = all peaks use auto classification.
         peak_modes: dict | None = None,         # Pre-computed context-aware mode assignments, keyed by peak id.
-        material_spectra: list | None = None,   # Per-phase spectra overlay for plate/brace measurements.
+        overlay_spectra: list | None = None,   # The overlaid curves: a comparison's, or a plate's or brace's phases.
         chart_title: str = "FFT Peaks",         # Title shown above the chart. Mirrors Swift ``var chartTitle``.
         guitar_type_str: str | None = None,     # Guitar body type string, used for mode classification.
     ):
@@ -194,7 +194,7 @@ class ExportableSpectrumChart:
         self.selected_flc_peak_id = selected_flc_peak_id
         self.mode_overrides = mode_overrides or {}
         self._peak_modes_override = peak_modes or {}
-        self.material_spectra = material_spectra or []
+        self.overlay_spectra = overlay_spectra or []
         self.chart_title = chart_title
         self.guitar_type_str = guitar_type_str
 
@@ -226,9 +226,8 @@ class ExportableSpectrumChart:
             gt_enum = GuitarType(_derived_guitar_type_str) if _derived_guitar_type_str else GuitarType.GENERIC
             self._guitar_type_enum = gt_enum
             if self.is_guitar:
-                # Pass all peaks (not just visible) so the claiming algorithm has the
-                # full context — mirrors Swift peakModeMap which calls classifyAll on
-                # the full peaks array, not the filtered visiblePeaks subset.
+                # The fallback when no peak_modes are passed: the chart's peaks classified —
+                # mirrors Swift peakModeMap's classifyAll(visiblePeaks).
                 self._mode_map = GuitarMode.classify_all(self.peaks, gt_enum)
             else:
                 self._mode_map = {}
@@ -240,12 +239,9 @@ class ExportableSpectrumChart:
     # ── Computed properties (mirrors Swift private computed vars) ─────────────
 
     @property
-    def chart_data(self) -> list:
-        """Mirrors ``private var chartData: [SpectrumDataPoint]``."""
-        return [
-            (f, m) for f, m in zip(self.frequencies, self.magnitudes)
-            if self.min_freq <= f <= self.max_freq
-        ]
+    def chart_data(self) -> tuple:
+        """The spectrum's drawn points. Mirrors ``private var chartData: [SpectrumDataPoint]``."""
+        return self.series_data(self.frequencies, self.magnitudes)
 
     @property
     def visible_mode_boundaries(self) -> list:
@@ -347,8 +343,8 @@ class ExportableSpectrumChart:
                 if resolved is None:
                     return palette.color(palette.Role.MODE_USER_DEFINED, in_scheme=Scheme.LIGHT)
                 return palette.color(palette.mode_role(resolved), in_scheme=Scheme.LIGHT)
-            # _mode_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode].
-            mode = self._mode_map.get(peak_id)
+            # peak_mode_map is {peak.id: GuitarMode} — mirrors Swift peakModeMap[peak.id].
+            mode = self.peak_mode_map.get(peak_id)
             if mode is not None and self._GuitarMode is not None:
                 return palette.color(palette.mode_role(mode), in_scheme=Scheme.LIGHT)
         else:
@@ -374,8 +370,8 @@ class ExportableSpectrumChart:
         if override:
             return f"{override} *"
         if self.is_guitar:
-            # _mode_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode].
-            mode = self._mode_map.get(getattr(peak, "id", None))
+            # peak_mode_map is {peak.id: GuitarMode} — mirrors Swift peakModeMap[peak.id].
+            mode = self.peak_mode_map.get(getattr(peak, "id", None))
             if mode is not None and self._GuitarMode is not None:
                 return mode.display_name
             return getattr(peak, "mode_label", None) or "Unknown"
@@ -388,12 +384,19 @@ class ExportableSpectrumChart:
                 return "Diagonal"
             return "Peak"
 
-    def series_data(self, frequencies: list, magnitudes: list) -> list:
-        """Mirrors ``private func seriesData(frequencies:magnitudes:)``."""
-        return [
-            (f, m) for f, m in zip(frequencies, magnitudes)
-            if self.min_freq <= f <= self.max_freq
-        ]
+    def series_data(self, frequencies, magnitudes) -> tuple:
+        """The points of one spectrum to draw, as (frequencies, magnitudes): those inside the range and
+        the one beyond each edge (``drawn_indices``); the plot area clips what crosses an edge. Mirrors
+        ``private func seriesData(frequencies:magnitudes:)``."""
+        import numpy as np
+
+        from guitar_tap.models.display_range import drawn_indices
+
+        freqs = np.asarray(frequencies, dtype=np.float64)
+        mags = np.asarray(magnitudes, dtype=np.float64)
+        n = min(len(freqs), len(mags))
+        lo, hi = drawn_indices(freqs[:n], self.min_freq, self.max_freq)
+        return freqs[lo:hi], mags[lo:hi]
 
     def annotation_position(self, peak, freq_to_x, db_to_y) -> tuple[float, float]:
         """The label's centre in pixel-space for *peak*: its centre in chart units — where it was
@@ -516,24 +519,22 @@ class ExportableSpectrumChart:
             for k in range(math.ceil(self.min_db / stride), math.floor(self.max_db / stride) + 1)
         ]])
 
-        if self.material_spectra:
-            # Mirrors: ForEach(materialSpectra) { LineMark.foregroundStyle(by: .value("Series", series.label)) }
+        if self.overlay_spectra:
+            # Mirrors: ForEach(overlaySpectra) { LineMark.foregroundStyle(by: .value("Series", series.label)) }
             # Each series carries its own color — use it directly rather than a positional palette.
-            for series in self.material_spectra:
-                sf = series.get("frequencies", [])
-                sm = series.get("magnitudes", [])
-                if sf and sm:
-                    sc = [max(self.min_db, min(self.max_db, v)) for v in sm]
+            for series in self.overlay_spectra:
+                sf, sm = self.series_data(series.get("frequencies", []), series.get("magnitudes", []))
+                if len(sf):
                     rgb = _series_rgb(series)
                     plot.plot(
-                        sf, sc, antialias=True,
+                        sf, sm.clip(self.min_db, self.max_db), antialias=True,
                         pen=chart_style.pen(rgb, style.overlay_width, pixels_per_point=SCALE))
         else:
-            # Mirrors: LineMark(...).foregroundStyle(chart.spectrum)
-            clamped = [max(self.min_db, min(self.max_db, v)) for v in self.magnitudes]
+            # Mirrors: ForEach(chartData) { LineMark(...).foregroundStyle(chart.spectrum) }
+            freqs, mags = self.chart_data
             spectrum = palette.color(palette.Role.CHART_SPECTRUM, in_scheme=Scheme.LIGHT)
             plot.plot(
-                self.frequencies, clamped,
+                freqs, mags.clip(self.min_db, self.max_db),
                 pen=chart_style.pen(spectrum, style.spectrum_width, pixels_per_point=SCALE),
                 antialias=True)
 
@@ -803,17 +804,23 @@ class ExportableSpectrumChart:
         # ── The legend, drawn last, over the labels, laid out in the plot so it wraps within it and never crosses
         # its axes; not cut at the plot's edges — mirrors the ChartLegend placed in Swift's chart overlay,
         # 10 in, in the image's sizes.
-        if self.material_spectra:
+        if self.overlay_spectra:
             from guitar_tap.views.chart_legend import ChartLegend
             painter.setClipping(False)
             legend = ChartLegend(
-                [(QtGui.QColor(*_series_rgb(series)), series.get("label", "?")) for series in self.material_spectra],
+                [(QtGui.QColor(*_series_rgb(series)), series.get("label", "?")) for series in self.overlay_spectra],
                 background=_light(palette.Role.CHART_READOUT_BACKGROUND),
                 font=_export_font(), font_size=14, swatch=(22, 3), spacing=16, line_spacing=6,
                 padding=(6, 10, 6, 10), corner_radius=8, scale=SCALE)
             legend_pad = 10 * SCALE
             legend.place(QtCore.QPoint(AXIS_LEFT + PLOT_W - legend_pad, AXIS_TOP + legend_pad),
                          PLOT_W - 2 * legend_pad)
+            # Drawn with the platform-neutral Fusion style: the macOS style has no graphics context for a
+            # frame (each swatch and label) drawn into an image, and warns for each. Nothing in the legend
+            # draws differently — its colours are its style sheets'.
+            fusion = QtWidgets.QStyleFactory.create("Fusion")
+            for widget in (legend, *legend.findChildren(QtWidgets.QWidget)):
+                widget.setStyle(fusion)
             legend.render(painter, legend.pos())
 
         painter.end()
@@ -840,6 +847,8 @@ def make_exportable_spectrum_view(
     min_db: float,
     max_db: float,
     peaks: list,
+    summary_peaks: list | None = None,
+    detected_peak_count: int | None = None,
     show_mode_boundaries: bool = True,
     annotation_positions: dict | None = None,
     show_unknown_modes: bool | None = None,
@@ -849,7 +858,7 @@ def make_exportable_spectrum_view(
     selected_flc_peak_id: str | None = None,
     mode_overrides: dict | None = None,
     peak_modes: dict | None = None,
-    material_spectra: list | None = None,
+    overlay_spectra: list | None = None,
     date_label: str = "",
     chart_title: str = "FFT Peaks",
     guitar_type_str: str | None = None,
@@ -872,7 +881,7 @@ def make_exportable_spectrum_view(
       Header VStack (title + date/range/peaks count)
       Text(chartTitle)                   ← chart title, center-aligned
       ExportableSpectrumChart(...)       ← chart image via ExportableSpectrumChart.render()
-      Peak summary HStack                ← Detected Peaks Summary cards
+      Peak summary HStack                ← Selected Peaks Summary cards
       Mode-key HStack                    ← Guitar Modes, when no curves are overlaid
 
     :param frequencies: FFT frequency bins (Hz).
@@ -882,6 +891,12 @@ def make_exportable_spectrum_view(
     :param min_db: Minimum displayed magnitude (dBFS).
     :param max_db: Maximum displayed magnitude (dBFS).
     :param peaks: Detected resonant peaks to annotate.
+    :param summary_peaks: The Selected Peaks Summary's peaks: the report's Selected Peaks table — the selected
+        peaks at or above Peak Min in the range (``TapToneMeasurement.report_peaks``), whatever the
+        annotation setting.
+    :param detected_peak_count: The header's "Detected Peaks: N": a guitar's detected peaks in view
+        (``TapToneMeasurement.detected_peaks_in_view``); None for a plate or brace, which has no detected
+        peaks apart from its selected ones, and for a comparison.
     :param annotation_positions: Per-peak absolute label-center positions in data-space ({uuid: [abs_freq_hz, abs_db]}), keyed by peak id.
     :param show_unknown_modes: Whether to show peaks classified as unknown guitar modes.
     :param measurement_type_str: Guitar, plate, or brace — controls colour coding and boundary visibility.
@@ -890,7 +905,7 @@ def make_exportable_spectrum_view(
     :param selected_flc_peak_id: ID of the selected FLC peak (plate, optional).
     :param mode_overrides: Per-peak user-assigned mode label overrides.
     :param peak_modes: Pre-computed context-aware mode assignments, keyed by peak id.
-    :param material_spectra: Per-phase spectrum series for plate/brace overlays.
+    :param overlay_spectra: The overlaid curves: a comparison's measurements or taps, or a plate's or brace's phases.
     :param date_label: Date/time string shown in the header (e.g. formatted measurement timestamp).
     :param chart_title: Title rendered above the chart image.
     :param guitar_type_str: Guitar body type string used for mode classification.
@@ -929,15 +944,16 @@ def make_exportable_spectrum_view(
     HEADLINE_LINE = 16   * SCALE
     CAPTION_LINE  = 13   * SCALE
     # The summary: padded 8 above and below; the heading, 8 pt, then the cards — each padded 8,
-    # three lines 4 pt apart, 20 pt between cards, at most 8.
+    # three lines 4 pt apart, 20 pt between cards.
     CARD_PAD      = 8    * SCALE
     CARD_ROW_GAP  = 4    * SCALE
     CARD_H        = CARD_PAD * 2 + CAPTION_LINE * 3 + CARD_ROW_GAP * 2
-    SUMMARY_H     = (8 * SCALE + HEADLINE_LINE + 8 * SCALE + CARD_H + 8 * SCALE) if peaks else 0
+    summary_peaks = sorted(summary_peaks or [], key=lambda p: p.frequency)
+    SUMMARY_H     = (8 * SCALE + HEADLINE_LINE + 8 * SCALE + CARD_H + 8 * SCALE) if summary_peaks else 0
     # The mode key: one caption line padded 16 all round; then the image's 16 pt bottom margin. Overlaid curves
     # have their legend on the chart, so no key. With no block below the chart, its 16 pt spacing goes too.
-    LEGEND_BLOCK_H = 0 if material_spectra else 16 * SCALE + CAPTION_LINE + 16 * SCALE
-    blocks = [h for h in (SUMMARY_H if peaks else 0, LEGEND_BLOCK_H) if h]
+    LEGEND_BLOCK_H = 0 if overlay_spectra else 16 * SCALE + CAPTION_LINE + 16 * SCALE
+    blocks = [h for h in (SUMMARY_H, LEGEND_BLOCK_H) if h]
     BOTTOM        = 16   * SCALE
     TOTAL_W       = 1464 * SCALE
     TOTAL_H       = (FRAME_TOP + FRAME_H + BELOW_CHART - BLOCK_GAP + sum(BLOCK_GAP + h for h in blocks)
@@ -971,7 +987,7 @@ def make_exportable_spectrum_view(
         selected_flc_peak_id=selected_flc_peak_id,
         mode_overrides=mode_overrides,
         peak_modes=peak_modes,
-        material_spectra=material_spectra,
+        overlay_spectra=overlay_spectra,
         chart_title=chart_title,
         guitar_type_str=guitar_type_str,
     )
@@ -1099,19 +1115,20 @@ def make_exportable_spectrum_view(
     painter.setPen(_light(palette.Role.TEXT_SECONDARY))
     y += 23 * SCALE  # the last row's centre 23 pt below, as Swift's
 
-    # Swift: if !materialSpectra.isEmpty { Text("Comparing N measurements") }
-    #        else if !peaks.isEmpty { Text("Detected Peaks: N") }
-    if material_spectra:
+    # A guitar's detected peaks in view; a comparison's measurements (a plate's or brace's phases are
+    # overlaid curves too, but not measurements compared). Swift: if let detectedPeakCount { "Detected Peaks: N" }
+    # else if !overlaySpectra.isEmpty && measurementType.isGuitar { "Comparing N measurements" }
+    if detected_peak_count is not None:
         painter.drawText(
             SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-            f"Comparing {len(material_spectra)} measurements",
+            f"Detected Peaks: {detected_peak_count}",
         )
-    elif peaks:
+    elif overlay_spectra and chart.is_guitar:
         painter.drawText(
             SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-            f"Detected Peaks: {len(peaks)}",
+            f"Comparing {len(overlay_spectra)} measurements",
         )
     y += 24 * SCALE
 
@@ -1137,18 +1154,18 @@ def make_exportable_spectrum_view(
     painter.drawImage(SIDE_PAD, CHART_IMAGE_TOP * SCALE, chart_img)
     y = FRAME_TOP + FRAME_H + BELOW_CHART
 
-    # ── Detected Peaks Summary — mirrors peak summary VStack + HStack ─────────
-    if peaks:
+    # ── Selected Peaks Summary — the report table's peaks; mirrors peak summary VStack + HStack ─────────
+    if summary_peaks:
         hdr_font = _export_font()
         hdr_font.setPixelSize(13 * SCALE)  # mirrors .font(.headline)
         hdr_font.setBold(True)
         painter.setFont(hdr_font)
         painter.setPen(_light(palette.Role.TEXT_PRIMARY))
-        # Swift: Text("Detected Peaks Summary").font(.headline)
+        # Swift: Text("Selected Peaks Summary").font(.headline)
         painter.drawText(
             SIDE_PAD, y + 8 * SCALE, TOTAL_W - SIDE_PAD * 2, HEADLINE_LINE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-            "Detected Peaks Summary",
+            "Selected Peaks Summary",
         )
         card_top = y + 8 * SCALE + HEADLINE_LINE + 8 * SCALE
 
@@ -1161,9 +1178,8 @@ def make_exportable_spectrum_view(
         small_font = _export_font()
         small_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption2), 10 pt on macOS
         x_card = SIDE_PAD
-        # Swift: peaks.prefix(8).sorted(by: { $0.frequency < $1.frequency })
-        sorted_peaks = sorted(peaks[:8], key=lambda p: p.frequency)
-        for idx, peak in enumerate(sorted_peaks):
+        # Swift: summaryPeaks.sorted(by: { $0.frequency < $1.frequency })
+        for idx, peak in enumerate(summary_peaks):
             color = chart.peak_color(peak, idx)
             label = chart.peak_mode_label(peak, idx)
             # Italic + trailing " *" when overridden (peak_mode_label carries the " *").
@@ -1209,10 +1225,10 @@ def make_exportable_spectrum_view(
 
     ROW_H = CAPTION_LINE   # the legend's line
 
-    if not material_spectra and chart.is_guitar:
+    if not overlay_spectra and chart.is_guitar:
         # Swift: HStack { Text("Guitar Modes:") ForEach([.air,.top,.back,.dipole,.ringMode]) { Circle + label } }
         # Guitar-mode only — Swift's key is gated implicitly by measurementType.isGuitar (for plate/brace,
-        # materialSpectra is always populated, so Swift never shows the key for them).
+        # overlaySpectra is always populated, so Swift never shows the key for them).
         # Each entry fits its text, 20 pt apart: a 12 pt circle, 4 pt, the name.
         heading = "Guitar Modes:"
         painter.drawText(SIDE_PAD, y, 160 * SCALE, ROW_H,
@@ -1270,11 +1286,11 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
 
     snap = primary_snapshot
 
-    # Build material spectra list — mirrors Swift's materialSpectra construction.
-    material_spectra = []
+    # The measurement's phases as the overlaid curves — mirrors Swift renderSpectrumImageForMeasurement.
+    overlay_spectra = []
     if m.longitudinal_snapshot:
         ls = m.longitudinal_snapshot
-        material_spectra.append({
+        overlay_spectra.append({
             "frequencies": ls.frequencies,
             "magnitudes": ls.magnitudes,
             "color": palette.Role.MATERIAL_LONGITUDINAL,
@@ -1282,7 +1298,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         })
     if m.cross_snapshot:
         cs = m.cross_snapshot
-        material_spectra.append({
+        overlay_spectra.append({
             "frequencies": cs.frequencies,
             "magnitudes": cs.magnitudes,
             "color": palette.Role.MATERIAL_CROSS,
@@ -1290,15 +1306,16 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         })
     if m.flc_snapshot:
         fs = m.flc_snapshot
-        material_spectra.append({
+        overlay_spectra.append({
             "frequencies": fs.frequencies,
             "magnitudes": fs.magnitudes,
             "color": palette.Role.MATERIAL_FLC,
             "label": "Diagonal (fLC)",
         })
 
-    # Mirror TapToneAnalyzer.visiblePeaks: filter by annotationVisibilityMode and selectedPeakIDs.
-    all_peaks = m.peaks or []
+    # Mirror TapToneAnalyzer.visiblePeaks: the peaks above Peak Min, filtered by
+    # annotationVisibilityMode and selectedPeakIDs.
+    all_peaks = m.peaks_above_peak_min
     visibility_mode = AnnotationVisibilityMode.from_string(m.annotation_visibility_mode or "all")
     selected_ids = m.effective_selected_peak_ids
     if visibility_mode == AnnotationVisibilityMode.SELECTED:
@@ -1317,6 +1334,8 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         min_db=float(snap.min_db),
         max_db=float(snap.max_db),
         peaks=visible_peaks,
+        summary_peaks=m.report_peaks,
+        detected_peak_count=None if m.is_material else len(m.detected_peaks_in_view),
         annotation_positions=m.annotation_offsets or {},
         show_unknown_modes=snap.show_unknown_modes,
         measurement_type_str=snap.measurement_type or None,
@@ -1327,7 +1346,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         # The measurement's own modes — classified among all its peaks, as the file, the Details pane
         # and the live screen have them; never among the visible peaks. Mirrors Swift.
         peak_modes=m.auto_modes,
-        material_spectra=material_spectra if material_spectra else None,
+        overlay_spectra=overlay_spectra if overlay_spectra else None,
         date_label=str(m.timestamp) if m.timestamp else "",
         chart_title=f"FFT Peaks — {m.measurement_name or 'New'}",
         guitar_type_str=snap.guitar_type,

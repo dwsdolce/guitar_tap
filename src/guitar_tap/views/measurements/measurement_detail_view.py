@@ -148,7 +148,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                 (p for p in m.peaks if p.id in selected_ids),
                 key=lambda p: p.frequency,
             )
-            peaks_group = QtWidgets.QGroupBox("Identified Peaks")
+            peaks_group = QtWidgets.QGroupBox("Selected Peaks")
             palette.tag(peaks_group, group=True)
             peaks_vbox = QtWidgets.QVBoxLayout(peaks_group)
             peaks_vbox.setSpacing(4)

@@ -278,3 +278,37 @@ def test_export_from_saved_measurements(qtbot, window, edges, name, fixture):
     before = len(edges.saved)
     _row_menu_export(qtbot, window, edges, "Export PDF Report")
     assert _saved_once(edges, before, ".pdf").stem == f"{edges.prefix}{stem}"
+
+
+@pytest.mark.parametrize(("name", "fixture"), CASES, ids=[c[0] for c in CASES])
+def test_main_window_image_is_the_saved_measurements(qtbot, window, edges, name, fixture):
+    """The main window exports the measurement on screen as Saved Measurements exports it: the same
+    image from both places."""
+    _import(qtbot, window, edges, fixture)
+    edges.export_to(name, "main")
+    qtbot.waitUntil(window.export_spectrum_btn.isEnabled, timeout=10_000)
+    before = len(edges.saved)
+    _click(window.export_spectrum_btn)
+    main = _saved_once(edges, before, ".png").read_bytes()
+
+    edges.export_to(name, "saved")
+    before = len(edges.saved)
+    _row_menu_export(qtbot, window, edges, "Export Spectrum")
+    assert _saved_once(edges, before, ".png").read_bytes() == main
+
+
+def test_taps_view_does_not_change_the_exports(qtbot, window, edges):
+    """A multi-tap measurement's exports are of the measurement: its image is the averaged spectrum
+    whether the Taps view is on or off."""
+    _import(qtbot, window, edges, "dws-2024-umik-1-3-tap-swift-mac-1785359425.guitartap")
+    edges.export_to("multi-tap", "main")
+    qtbot.waitUntil(window.export_spectrum_btn.isEnabled, timeout=10_000)
+    before = len(edges.saved)
+    _click(window.export_spectrum_btn)
+    taps_off = _saved_once(edges, before, ".png").read_bytes()
+
+    _click(window._multi_tap_toggle_btn)
+    assert window.fft_canvas.analyzer.showing_multi_tap_comparison
+    before = len(edges.saved)
+    _click(window.export_spectrum_btn)
+    assert _saved_once(edges, before, ".png").read_bytes() == taps_off

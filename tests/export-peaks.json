@@ -1,0 +1,47 @@
+{
+ "slug": "test/export-peaks",
+ "about": "The peaks a saved measurement's report shows are the peaks it shows on screen: a guitar's at or above its Peak Min, a plate's or brace's identified peaks whatever the Peak Min. Each case: a fixture, the Peak Min it is read with (null: as saved), how many of its peaks are at or above that Peak Min (peaksAbovePeakMin), how many of those are in the saved range — the header's \"Detected Peaks: N\", none for a plate or brace (detectedPeaksInView) — and the report's Selected Peaks rows: the selected peaks among them in the saved range, by frequency rounded to 0.1 Hz. Expected values are Swift's.",
+ "cases": [
+  {
+   "fixture": "dws-2024-umik-1-swift-mac-1785359434",
+   "peakMinThreshold": null,
+   "peaksAbovePeakMin": 49,
+   "detectedPeaksInView": 16,
+   "reportRows": [
+    97.3,
+    197.9,
+    240.1
+   ],
+   "note": "as saved (Peak Min -78 dB): every peak is at or above it; the selected Air, Top and Back are listed"
+  },
+  {
+   "fixture": "dws-2024-umik-1-swift-mac-1785359434",
+   "peakMinThreshold": -60.0,
+   "peaksAbovePeakMin": 5,
+   "detectedPeaksInView": 4,
+   "reportRows": [
+    197.9,
+    240.1
+   ],
+   "note": "Peak Min -60 dB hides the selected Air (97.3 Hz, -64.2 dB): the report leaves it out, as the screen does"
+  },
+  {
+   "fixture": "dws-2024-umik-1-swift-mac-1785359434",
+   "peakMinThreshold": -50.0,
+   "peaksAbovePeakMin": 1,
+   "detectedPeaksInView": 1,
+   "reportRows": [
+    197.9
+   ],
+   "note": "Peak Min -50 dB leaves only Top"
+  },
+  {
+   "fixture": "plate-umik-1-swift-mac-1785359486",
+   "peakMinThreshold": -50.0,
+   "peaksAbovePeakMin": 3,
+   "detectedPeaksInView": 0,
+   "reportRows": null,
+   "note": "a plate's identified peaks (one at -59.0 dB) are its peaks whatever the Peak Min"
+  }
+ ]
+}

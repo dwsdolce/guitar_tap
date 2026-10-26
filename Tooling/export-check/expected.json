@@ -162,7 +162,7 @@
       ],
       [
        639.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -537,10 +537,6 @@
     [
      93.5,
      103.5
-    ],
-    [
-     116.5,
-     126.5
     ]
    ],
    "chart_title": [
@@ -743,7 +739,7 @@
       ],
       [
        639.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -1118,10 +1114,6 @@
     [
      93.5,
      103.5
-    ],
-    [
-     116.5,
-     126.5
     ]
    ],
    "chart_title": [
@@ -1984,7 +1976,7 @@
       ],
       [
        661.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -2429,7 +2421,7 @@
       ],
       [
        661.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -3854,7 +3846,7 @@
       ],
       [
        661.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -4531,7 +4523,7 @@
       ],
       [
        661.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -5208,7 +5200,7 @@
       ],
       [
        639.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -5957,10 +5949,6 @@
     [
      93.5,
      103.5
-    ],
-    [
-     116.5,
-     126.5
     ]
    ],
    "chart_title": [
@@ -6163,7 +6151,7 @@
       ],
       [
        639.0,
-       "Detected Peaks",
+       "Selected Peaks",
        [
         [
          "bold",
@@ -6912,10 +6900,6 @@
     [
      93.5,
      103.5
-    ],
-    [
-     116.5,
-     126.5
     ]
    ],
    "chart_title": [

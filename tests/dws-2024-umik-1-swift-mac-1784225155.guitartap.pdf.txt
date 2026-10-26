@@ -6,7 +6,7 @@
 0	134.0	Frequency Range: 75.0 Hz – 350.0 Hz
 0	149.0	Microphone: Umik-1 Gain: 18dB · calibrated (7108913)
 0	175.0	Frequency Spectrum
-0	661.0	Detected Peaks
+0	661.0	Selected Peaks
 0	681.0	Frequency Magnitude Note Mode
 0	704.0	97.3 Hz -64.2 dB G2 Air (Helmholtz)
 0	724.0	197.9 Hz -45.3 dB G3 Top

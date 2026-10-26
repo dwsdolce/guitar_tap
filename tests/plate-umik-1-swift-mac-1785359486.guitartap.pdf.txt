@@ -6,7 +6,7 @@
 0	134.0	Frequency Range: 20.0 Hz – 200.0 Hz
 0	149.0	Microphone: Umik-1 Gain: 18dB · calibrated (7108913)
 0	175.0	Frequency Spectrum
-0	639.0	Detected Peaks
+0	639.0	Selected Peaks
 0	659.0	Frequency Magnitude Note Q Factor Role
 0	682.0	35.9 Hz -59.0 dB D1 8.0 Diagonal (fLC)
 0	702.0	66.9 Hz -49.6 dB C2 15.3 Longitudinal (fL)

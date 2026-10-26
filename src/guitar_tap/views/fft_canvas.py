@@ -450,7 +450,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.measurementLoaded.connect(self.measurementLoaded)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.loadedAxisRangeChanged.connect(self._on_loaded_axis_range_changed)
-        self.analyzer.materialSpectraChanged.connect(self.load_material_spectra)
+        self.analyzer.plateStatusChanged.connect(self._hide_spectrum_line_while_reviewing)
         # The spectrum line: drawn on every frame from the engine's live frame (_on_live_frame), and
         # when the analyzer's own spectrum changes (spectrumUpdated). peaksChanged drives the scatter
         # plot — single authoritative source for both the scatter plot and the results panel.
@@ -592,21 +592,19 @@ class FftCanvas(pg.PlotWidget):
         # Defer initial position until the widget has been laid out
         QtCore.QTimer.singleShot(0, self._reposition_info_btn)
 
-        # Comparison overlay state — mirrors comparisonSpectra in TapToneAnalyzer.swift
-        self._comparison_curves: list[pg.PlotDataItem] = []
-        # Each comparison / material curve's colour: a palette role (drawn in the current scheme) or
-        # a stored (r, g, b), in the same order as _comparison_curves.
-        self._comparison_curve_colors: list = []
-        # The comparison / material curve the crosshair follows (-1: none) — Swift's lockedSeriesIndex.
+        # The overlaid curves (set_overlay_spectra) — Swift SpectrumView's overlaySpectra: each one's
+        # whole (frequencies, magnitudes), which the crosshair reads, and its plot item, which is given
+        # only the points drawn for the visible range.
+        self._overlay_spectra: list[tuple[np.ndarray, np.ndarray]] = []
+        self._overlay_curves: list[pg.PlotDataItem] = []
+        # Each overlaid curve's colour: a palette role (drawn in the current scheme) or a stored
+        # (r, g, b), in the same order as _overlay_curves.
+        self._overlay_curve_colors: list = []
+        # The overlaid curve the crosshair follows (-1: none) — Swift's lockedSeriesIndex.
         self._locked_series_index = -1
         self._comparison_legend: QtWidgets.QWidget | None = None
         # The legend is laid out in the plot area: re-placed whenever the plot's size changes.
         self.getPlotItem().vb.sigResized.connect(lambda _vb: self._reposition_comparison_legend())
-        # True when _comparison_curves contains material phase overlays (L/C/FLC)
-        # rather than user-loaded comparison files.  When True, fft_line must still
-        # be updated so the live waveform is visible underneath the overlays —
-        # mirrors Swift SpectrumView always rendering spectrumLineContent.
-        self._has_material_spectra: bool = False
 
         # Last viewport-filtered peaks received via peaksChanged signal.
         # Tracks the emitted slice so point_picked and update_mode_colors
@@ -680,7 +678,7 @@ class FftCanvas(pg.PlotWidget):
         self._crosshair_h.setPen(crosshair)
         if getattr(self, "_bands_guitar_type", None):
             self.set_guitar_type_bands(self._bands_guitar_type)
-        for curve, color in zip(self._comparison_curves, self._comparison_curve_colors):
+        for curve, color in zip(self._overlay_curves, self._overlay_curve_colors):
             curve.setPen(chart_style.pen(self._curve_rgb(color), style.overlay_width))
         if self._comparison_legend is not None:
             self._build_comparison_legend(self._comparison_legend_labels, font_size=10)
@@ -712,7 +710,7 @@ class FftCanvas(pg.PlotWidget):
             self._comparison_legend.deleteLater()
         legend = ChartLegend(
             [(QtGui.QColor(*self._curve_rgb(color)), label)
-             for label, color in zip(labels, self._comparison_curve_colors)],
+             for label, color in zip(labels, self._overlay_curve_colors)],
             background=palette.color(palette.Role.CHART_READOUT_BACKGROUND),
             font_size=font_size, parent=self)
         legend.show()
@@ -1056,18 +1054,11 @@ class FftCanvas(pg.PlotWidget):
 
         freq_color = palette.qss(palette.Role.CHART_CROSSHAIR_FREQUENCY)
 
-        # Material spectra overlays (plate/brace review states) are stored in
-        # _comparison_curves even when is_comparing is False.  Snap to them
-        # whenever they are present — mirrors Swift resolveSnapState which snaps
-        # when isMeasurementComplete || !materialSpectra.isEmpty.
-        has_material_curves = bool(self._comparison_curves)
-
-        if self.is_comparing or has_material_curves:
-            # Follow the nearest comparison / material curve on screen, kept until another is
-            # CURVE_GRAVITY_PX nearer, and read it at the pointer's frequency — mirrors Swift
-            # resolveSnapState → nearestSeriesIndex, snapToWaveform.
-            series = [curve.getOriginalDataset() for curve in self._comparison_curves]
-            series = [(y, x) for x, y in series if x is not None and y is not None]
+        if self._overlay_spectra:
+            # Follow the nearest overlaid curve on screen, kept until another is CURVE_GRAVITY_PX
+            # nearer, and read its whole spectrum (not the points drawn) at the pointer's frequency —
+            # mirrors Swift resolveSnapState → nearestSeriesIndex, snapToWaveform on overlaySpectra.
+            series = [(mags, freqs) for freqs, mags in self._overlay_spectra]
 
             def screen_y(db: float) -> float:
                 return vb.mapViewToScene(QtCore.QPointF(mouse_freq, db)).y()
@@ -1078,8 +1069,8 @@ class FftCanvas(pg.PlotWidget):
             snapped = (snap.snap_to_waveform(mouse_freq, *series[locked])
                        if 0 <= locked < len(series) else None)
             display_freq, display_db = snapped if snapped is not None else (mouse_freq, mouse_db)
-            if 0 <= locked < len(self._comparison_curve_colors):
-                r, g, b = self._curve_rgb(self._comparison_curve_colors[locked])
+            if 0 <= locked < len(self._overlay_curve_colors):
+                r, g, b = self._curve_rgb(self._overlay_curve_colors[locked])
                 freq_color = f"rgb({r},{g},{b})"
 
         elif self.is_measurement_complete and np.any(self.saved_mag_y_db):
@@ -1548,6 +1539,7 @@ class FftCanvas(pg.PlotWidget):
         self._minFreq = fmin
         self._maxFreq = fmax
         self._draw_spectrum()
+        self._draw_overlay_curves()
         # The peaks the chart marks — none while comparing — as Swift's view reads tap.chartPeaks.
         chart_peaks = self.analyzer.chart_peaks
         if chart_peaks is not None:
@@ -1563,11 +1555,6 @@ class FftCanvas(pg.PlotWidget):
         """True when in comparison display mode — mirrors tap.displayMode == .comparison."""
         return self.display_mode == AnalysisDisplayMode.COMPARISON
 
-    @property
-    def comparison_count(self) -> int:
-        """Number of active comparison overlay curves."""
-        return len(self._comparison_curves)
-
     @staticmethod
     def _comparison_label(m: object) -> str:
         """Short label for the legend — mirrors comparisonLabel(for:) in Swift."""
@@ -1578,82 +1565,75 @@ class FftCanvas(pg.PlotWidget):
         return format_display_datetime_compact(getattr(m, "timestamp", ""))
 
     def load_comparison(self, measurements: list) -> None:
-        """Load guitar measurements as comparison overlays.
-
-        Delegates analysis to the analyzer, then creates PlotDataItem view curves.
-        """
-        # Remove only the canvas curves — do NOT call analyzer.clear_comparison() here,
-        # because it emits comparisonChanged(False).  The model's load_comparison() resets
-        # showing_multi_tap_comparison and tap_entries directly (mirroring Swift),
-        # then emits a single coherent comparisonChanged(True).
-        self._clear_comparison_curves()
-
-        # Delegate to analyzer — resets multi-tap state, populates _comparison_data /
-        # comparison_labels, and emits comparisonChanged(True).
-        # Mirrors Swift loadComparison(measurements:).
-        #
-        # _on_comparison_changed_from_analyzer fires during this call; it detects that
-        # _comparison_curves is empty and calls _render_comparison_curves() there.
-        # We must NOT call _render_comparison_curves() again after this returns, or
-        # we get duplicate curves.
+        """Load guitar measurements as comparison overlays. Delegates to the analyzer, whose
+        comparisonChanged(True) brings the view's overlay_spectra here (set_overlay_spectra).
+        Mirrors Swift loadComparison(measurements:)."""
         self.analyzer.load_comparison(measurements)
 
-    def _render_comparison_curves(self) -> None:
-        """Create PlotDataItem curves and legend from analyzer._comparison_data.
-
-        Called both by load_comparison() (live path) and by
-        _on_comparison_changed_from_analyzer() when curves are absent (restore path).
-        Assumes _comparison_curves is empty; callers must call _clear_comparison_curves()
-        first if needed.
-        """
-        for entry in self.analyzer._comparison_data:
-            label    = entry["label"]
-            color    = entry.get("role", entry["color"])
-            freq_arr = entry["freqs"]
-            mag_arr  = entry["mags"]
-            curve = pg.PlotDataItem(
-                freq_arr, mag_arr,
-                pen=chart_style.pen(self._curve_rgb(color), chart_style.SCREEN.overlay_width),
-                name=label, antialias=True,
-            )
-            self.addItem(curve)
-            self._comparison_curves.append(curve)
-            self._comparison_curve_colors.append(color)
-
-        if self._comparison_curves:
-            self._build_comparison_legend(
-                [entry["label"] for entry in self.analyzer._comparison_data], font_size=10)
-
-        # Clear the main spectrum line — only comparison curves should be visible.
-        self._spectrum = None
-        self.fft_line.setData([], [])
-        self.points.setData(x=[], y=[])
-
+    def set_overlay_spectra(self, spectra: list) -> None:
+        """Draw the chart's overlaid curves — Swift SpectrumView's ``overlaySpectra``: a comparison's
+        measurements or a multi-tap measurement's taps, or a plate's or brace's phases. Each entry is a
+        dict of ``frequencies``, ``magnitudes``, ``color`` (a palette role or a stored (r, g, b)) and
+        ``label``. The whole spectra are kept for the crosshair; each curve is given only the points
+        drawn for the visible range (``_draw_overlay_curves``), as the spectrum line is."""
         self._locked_series_index = -1
-
-    def _clear_comparison_curves(self) -> None:
-        """Remove canvas-side comparison curves and legend without touching model state.
-
-        Used by load_comparison() so it can clear old curves without emitting
-        comparisonChanged(False) — the model's load_comparison() resets its own
-        state and emits a single comparisonChanged(True).
-        """
-        self._locked_series_index = -1
-        for curve in self._comparison_curves:
+        for curve in self._overlay_curves:
             self.removeItem(curve)
-        self._comparison_curves.clear()
-        self._comparison_curve_colors.clear()
+        self._overlay_curves.clear()
+        self._overlay_curve_colors.clear()
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
+
+        self._overlay_spectra = []
+        for entry in spectra:
+            freqs = np.asarray(entry["frequencies"], dtype=np.float64)
+            mags = np.asarray(entry["magnitudes"], dtype=np.float64)
+            n = min(len(freqs), len(mags))
+            self._overlay_spectra.append((freqs[:n], mags[:n]))
+            curve = pg.PlotDataItem(
+                pen=chart_style.pen(self._curve_rgb(entry["color"]), chart_style.SCREEN.overlay_width),
+                name=entry["label"], antialias=True,
+            )
+            self.addItem(curve)
+            self._overlay_curves.append(curve)
+            self._overlay_curve_colors.append(entry["color"])
+        self._draw_overlay_curves()
+        if spectra:
+            self._build_comparison_legend([entry["label"] for entry in spectra], font_size=10)
+
+        # In a comparison the overlaid curves replace the spectrum line and its peaks (Swift's
+        # displaySpectrum is empty there); while a plate or brace phase is reviewed the line is
+        # hidden under its phases.
+        if self.analyzer.display_mode == AnalysisDisplayMode.COMPARISON:
+            self._spectrum = None
+            self.fft_line.setData([], [])
+            self.points.setData(x=[], y=[])
+        self._hide_spectrum_line_while_reviewing()
+
+    def _draw_overlay_curves(self) -> None:
+        """Give each overlaid curve only the points drawn for the visible range — the shared
+        ``drawn_indices``, as ``_draw_spectrum`` and Swift's ``overlaySpectraContent``."""
+        x0, x1 = (float(v) for v in self.getPlotItem().vb.viewRange()[0])
+        for curve, (freqs, mags) in zip(self._overlay_curves, self._overlay_spectra):
+            lo, hi = dr.drawn_indices(freqs, x0, x1)
+            curve.setData(freqs[lo:hi], mags[lo:hi])
+
+    def _hide_spectrum_line_while_reviewing(self, *_args) -> None:
+        """Clear the spectrum line while a plate or brace phase is reviewed — Swift SpectrumView's
+        baseChart leaving out spectrumLineContent when isReviewingMaterialPhase."""
+        if self.analyzer.material_tap_phase.is_reviewing:
+            self._spectrum = None
+            self.fft_line.setData([], [])
 
     def _on_comparison_changed_from_analyzer(self, is_comparing: bool) -> None:
         """React to comparison mode entering or leaving.
 
         Applies visibility of peaks and threshold lines (mirrors the isComparing
-        checks in TapToneAnalysisView+SpectrumViews.swift), applies the
-        axis ranges from the comparison data when entering comparison mode, and
-        removes the comparison curves when leaving it.
+        checks in TapToneAnalysisView+SpectrumViews.swift). The curves themselves come
+        from the view's overlay_spectra (set_overlay_spectra); the axis bounds from
+        _on_loaded_axis_range_changed, which fires before this handler because
+        set_loaded_axis_range() emits loadedAxisRangeChanged before comparisonChanged.
 
         Also relays the signal outward so external observers can react.
         """
@@ -1670,21 +1650,6 @@ class FftCanvas(pg.PlotWidget):
         # Tap-trigger / Reset lines no longer exist (the threshold is now
         # an RMS-domain trigger displayed on the ThresholdSlider widget;
         # rendering it on the FFT chart was misleading).
-
-        if is_comparing:
-            # On the restore path (loading a saved comparison record), the analyzer
-            # has populated _comparison_data but the canvas may have stale curves
-            # from a previous multi-tap comparison.  Clear stale curves first,
-            # then render the new comparison curves.
-            if self.analyzer._comparison_data:
-                if self._comparison_curves:
-                    self._clear_comparison_curves()
-                self._render_comparison_curves()
-            # Axis bounds are applied by _on_loaded_axis_range_changed, which fires
-            # before this handler because set_loaded_axis_range() emits
-            # loadedAxisRangeChanged before the model emits comparisonChanged.
-        else:
-            self._clear_comparison_curves()
 
         self.comparisonChanged.emit(is_comparing)
 
@@ -1753,81 +1718,9 @@ class FftCanvas(pg.PlotWidget):
         """
         if not is_measurement_complete:
             self.selected_point.setData(x=[], y=[])
-            # clear_comparison was already called by analyzer.set_measurement_complete
-            # but we need to clear the view curves too
-            self._clear_comparison_view()
             # A new measurement started: the chart returns to the saved view after a load the user
             # has not moved, and otherwise stays where it is.
             self.apply_new_measurement_range()
-
-    def _clear_comparison_view(self) -> None:
-        """Remove comparison view curves (called when returning to live mode)."""
-        self._locked_series_index = -1
-        for curve in self._comparison_curves:
-            self.removeItem(curve)
-        self._comparison_curves.clear()
-        self._comparison_curve_colors.clear()
-        self._has_material_spectra = False
-        if self._comparison_legend is not None:
-            self._comparison_legend.deleteLater()
-            self._comparison_legend = None
-
-    def load_material_spectra(
-        self,
-        spectra: "list[tuple[str, palette.Role, list, list]]",
-    ) -> None:
-        """Display per-phase plate/brace spectra as overlaid colored curves.
-
-        Mirrors Swift's materialSpectra computed property in
-        TapToneAnalysisView+SpectrumViews.swift, which builds the L/C/FLC overlay
-        from tap.longitudinalSpectrum / crossSpectrum / flcSpectrum.
-
-        Each entry in `spectra` is (label, (r,g,b), freq_list, mag_list).
-        Reuses the _comparison_curves / legend infrastructure so the display is
-        identical to the comparison overlay but driven by phase snapshots.
-        The live fft_line remains visible underneath the overlays — mirrors Swift's
-        spectrumLineContent always being rendered with materialSpectraContent on top.
-        """
-        import numpy as np
-
-        # Clear any existing curves/legend first.
-        self._clear_comparison_view()
-
-        if not spectra:
-            return
-
-        self._has_material_spectra = True
-
-        # Clear the live fft_line immediately so the stale waveform from just
-        # before the phase transition does not persist as a red ghost underneath
-        # the phase overlay curves.  set_draw_data() will keep it cleared while
-        # is_reviewing is True (it skips the setData call), but we must clear it
-        # here on the transition because set_draw_data() may not be called again
-        # until the next FFT frame arrives.
-        # Mirrors Swift SpectrumView: spectrumLineContent is excluded from the
-        # chart entirely when isReviewingMaterialPhase is true.
-        if self.analyzer.material_tap_phase.is_reviewing:
-            self._spectrum = None
-            self.fft_line.setData([], [])
-
-        for label, role, freq_list, mag_list in spectra:
-            freq_arr = np.array(freq_list, dtype=np.float64)
-            mag_arr  = np.array(mag_list,  dtype=np.float64)
-            curve = pg.PlotDataItem(
-                freq_arr, mag_arr,
-                pen=chart_style.pen(palette.rgb(role), chart_style.SCREEN.overlay_width),
-                name=label, antialias=True,
-            )
-            self.addItem(curve)
-            self._comparison_curves.append(curve)
-            self._comparison_curve_colors.append(role)
-
-        self._build_comparison_legend([label for label, _role, _f, _m in spectra], font_size=10)
-
-        # fft_line is cleared above when entering a review phase (mirrors Swift hiding
-        # spectrumLineContent when isReviewingMaterialPhase is true).  During capture
-        # phases (not reviewing) the live waveform remains visible so the user can
-        # see the spectrum as they prepare to tap.
 
     def setMinFreq(self, minFreq: int) -> None:
         """As it says"""
@@ -1945,17 +1838,14 @@ class FftCanvas(pg.PlotWidget):
         """
         freq_axis = freqs if freqs is not None else self.freq
         # Suppress fft_line (live waveform) in two cases:
-        # 1. User comparison mode (user-loaded files) — only overlay curves shown.
+        # 1. Comparison mode — only the overlaid curves are shown (Swift's displaySpectrum is empty).
         # 2. Material phase review (REVIEWING_L/C/FLC) — only frozen phase overlays
         #    and peak annotations should be visible, no live waveform underneath.
         # Mirrors Swift SpectrumView.baseChart: spectrumLineContent is hidden when
         # isReviewingMaterialPhase is true.
-        is_user_comparison = bool(self._comparison_curves) and not self._has_material_spectra
-        is_reviewing = (
-            self._has_material_spectra
-            and self.analyzer.material_tap_phase.is_reviewing
-        )
-        if not is_user_comparison and not is_reviewing:
+        is_comparison = self.analyzer.display_mode == AnalysisDisplayMode.COMPARISON
+        is_reviewing = self.analyzer.material_tap_phase.is_reviewing
+        if not is_comparison and not is_reviewing:
             if np.any(mag_db):
                 self._spectrum = (np.asarray(freq_axis), np.asarray(mag_db))
                 self._draw_spectrum()
