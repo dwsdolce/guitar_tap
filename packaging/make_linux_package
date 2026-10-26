@@ -1,0 +1,364 @@
+#!/bin/bash
+#
+# Build a .deb and/or an .rpm from an application tree that is already staged
+# and self-contained.
+#
+# PyInstaller has already produced a directory that runs in place, carrying its
+# own Python and Qt, so that directory is the payload as it stands - there is no
+# AppDir in between and nothing to compile here. Both packages lay it out the
+# same way:
+#
+#   /opt/<name>/                        the PyInstaller bundle, verbatim
+#   /usr/bin/<name>                     a wrapper that execs into it
+#   /usr/share/applications/<name>.desktop
+#   /usr/share/icons/hicolor/<size>/apps/<name>.png
+#   /usr/share/doc/<name>/copyright
+#
+# /opt rather than /usr is deliberate. The tree carries a private copy of Qt and
+# finds its own assets - its icons and libraries under _internal - by
+# looking next to the executable, which is what /opt lets it keep doing: the
+# same relative layout that already works in the AppImage, moved somewhere a
+# package manager owns. Scattering the parts across /usr/lib and /usr/share
+# would mean patching the asset lookup and the rpaths for no gain, since nothing
+# else could link against a bundled Qt anyway. The FHS blesses /opt for exactly
+# this: self-contained add-on packages.
+#
+# The desktop entry says Exec=guitar-tap, which resolves through PATH to the
+# wrapper, so it is installed unchanged. It needs no scriptlet:
+# desktop-file-utils registers a trigger on /usr/share/applications on both
+# Debian- and RPM-derived systems, so the entry is picked up on install.
+#
+# Usage:
+#   make_linux_package --name guitar-tap --stem guitar-tap \
+#                      --version 1.1.0.42 --payload dist/guitar-tap \
+#                      --binary guitar-tap \
+#                      --desktop packaging/guitar-tap.desktop \
+#                      --icon src/guitar_tap/icons/guitar-tap-256.png --icon-size 256x256 \
+#                      --summary "One line" --description "Longer prose." \
+#                      --copyright LICENSE \
+#                      --outdir dist --formats deb,rpm [--env K=V]...
+
+set -u
+
+# Whatever the caller's umask is, the files in a package are the same: 755 for
+# directories and 644 for the plain files this script writes. Without this a
+# developer with a group-writable umask ships a group-writable /usr/bin, which
+# both package linters flag. The payload is copied with its own modes intact
+# and is not affected.
+umask 022
+
+NAME= STEM= VERSION= PAYLOAD= BINARY= DESKTOP= ICON=
+SUMMARY= DESCRIPTION= OUTDIR= FORMATS=deb,rpm COPYRIGHT=
+ICON_SIZE=512x512
+MAINTAINER="David Smith <dws@dolcesfogato.com>"
+LICENSE="GPL-3.0"
+URL="https://github.com/dwsdolce/guitar_tap"
+ENVS=()
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --name)        NAME="$2"; shift 2 ;;
+        --stem)        STEM="$2"; shift 2 ;;
+        --version)     VERSION="$2"; shift 2 ;;
+        --payload)     PAYLOAD="$2"; shift 2 ;;
+        --binary)      BINARY="$2"; shift 2 ;;
+        --desktop)     DESKTOP="$2"; shift 2 ;;
+        --icon)        ICON="$2"; shift 2 ;;
+        --icon-size)   ICON_SIZE="$2"; shift 2 ;;
+        --summary)     SUMMARY="$2"; shift 2 ;;
+        --description) DESCRIPTION="$2"; shift 2 ;;
+        --copyright)   COPYRIGHT="$2"; shift 2 ;;
+        --maintainer)  MAINTAINER="$2"; shift 2 ;;
+        --license)     LICENSE="$2"; shift 2 ;;
+        --url)         URL="$2"; shift 2 ;;
+        --outdir)      OUTDIR="$2"; shift 2 ;;
+        --formats)     FORMATS="$2"; shift 2 ;;
+        --env)         ENVS+=("$2"); shift 2 ;;
+        *) echo "make_linux_package: unknown argument $1" >&2; exit 1 ;;
+    esac
+done
+
+for required in NAME STEM VERSION PAYLOAD BINARY DESKTOP ICON SUMMARY OUTDIR; do
+    if [ -z "${!required}" ]; then
+        echo "make_linux_package: --${required,,} is required" >&2
+        exit 1
+    fi
+done
+if [ ! -d "$PAYLOAD" ]; then
+    echo "make_linux_package: payload $PAYLOAD is not a directory" >&2
+    exit 1
+fi
+if [ ! -x "$PAYLOAD/$BINARY" ]; then
+    echo "make_linux_package: $PAYLOAD/$BINARY is not executable" >&2
+    exit 1
+fi
+if [ -n "$COPYRIGHT" ] && [ ! -f "$COPYRIGHT" ]; then
+    echo "make_linux_package: copyright file $COPYRIGHT does not exist" >&2
+    exit 1
+fi
+
+want() { case ",$FORMATS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+
+# uname says x86_64 and aarch64; dpkg says amd64 and arm64. The package files
+# themselves are named with the uname spelling, in both formats, so that a
+# directory listing sorts them next to the AppImage.
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64)  DEB_ARCH=amd64 ;;
+    aarch64) DEB_ARCH=arm64 ;;
+    armv7l)  DEB_ARCH=armhf ;;
+    *)       DEB_ARCH="$ARCH" ;;
+esac
+
+mkdir -p "$OUTDIR"
+OUTDIR=$(cd "$OUTDIR" && pwd -P)
+PAYLOAD=$(cd "$PAYLOAD" && pwd -P)
+DESKTOP=$(cd "$(dirname "$DESKTOP")" && pwd -P)/$(basename "$DESKTOP")
+ICON=$(cd "$(dirname "$ICON")" && pwd -P)/$(basename "$ICON")
+[ -n "$COPYRIGHT" ] && \
+    COPYRIGHT=$(cd "$(dirname "$COPYRIGHT")" && pwd -P)/$(basename "$COPYRIGHT")
+
+#===============================================
+# Stage the filesystem both formats install
+#===============================================
+STAGE="$OUTDIR/pkgroot-$NAME"
+rm -rf "$STAGE"
+mkdir -p "$STAGE/opt" \
+         "$STAGE/usr/bin" \
+         "$STAGE/usr/share/applications" \
+         "$STAGE/usr/share/icons/hicolor/$ICON_SIZE/apps" \
+         "$STAGE/usr/share/doc/$NAME"
+
+cp -a "$PAYLOAD/." "$STAGE/opt/$NAME/"
+
+# The payload is copied with its modes intact, so it arrives with whatever
+# umask PyInstaller ran under - a developer with a group-writable one ships a
+# group-writable /opt, which both package linters flag. The write bits are the
+# only thing taken away; the execute bits that matter to the bundle stay.
+chmod -R go-w "$STAGE/opt/$NAME"
+
+cp "$DESKTOP" "$STAGE/usr/share/applications/$NAME.desktop"
+cp "$ICON" "$STAGE/usr/share/icons/hicolor/$ICON_SIZE/apps/$NAME.png"
+
+# Wrapper. The exec keeps the process the desktop menu entry started, rather
+# than leaving a shell waiting on it, and "$@" passes the files through from the
+# desktop entry's %U.
+{
+    echo '#!/bin/sh'
+    echo "# Generated by packaging/make_linux_package. Runs $NAME out of /opt."
+    for e in ${ENVS+"${ENVS[@]}"}; do
+        echo "export ${e%%=*}=\"${e#*=}\""
+    done
+    echo "exec /opt/$NAME/$BINARY \"\$@\""
+} > "$STAGE/usr/bin/$NAME"
+chmod 755 "$STAGE/usr/bin/$NAME"
+
+# /usr/share/doc/<name>/copyright is where both formats' tooling expects to find
+# the licence, so LICENSE goes in verbatim - it is the GPL, the application's
+# licence. A package with no copyright file at all is something both linters
+# object to, so a stub goes in when the caller passes none.
+if [ -n "$COPYRIGHT" ]; then
+    cp "$COPYRIGHT" "$STAGE/usr/share/doc/$NAME/copyright"
+else
+    cat > "$STAGE/usr/share/doc/$NAME/copyright" <<EOF
+Upstream-Name: Guitar Tap
+Source: $URL
+
+Copyright (C) 2026 David Smith.
+License: $LICENSE
+EOF
+fi
+chmod 644 "$STAGE/usr/share/doc/$NAME/copyright"
+
+#===============================================
+# .deb
+#===============================================
+if want deb; then
+    if ! command -v dpkg-deb >/dev/null 2>&1; then
+        echo "make_linux_package: dpkg-deb not found - skipping the .deb" >&2
+        echo "  Debian and Ubuntu have it in dpkg; elsewhere it is the 'dpkg' package." >&2
+    else
+        mkdir -p "$STAGE/DEBIAN"
+
+        # Written before dependencies are worked out, because dpkg-shlibdeps
+        # identifies a build tree by the DEBIAN directory at its root - that is
+        # how it knows $ORIGIN in an rpath refers to somewhere inside this
+        # package and not to a library the system has to supply.
+        write_control() {
+            {
+                echo "Package: $NAME"
+                echo "Version: $VERSION"
+                echo "Architecture: $DEB_ARCH"
+                echo "Maintainer: $MAINTAINER"
+                echo "Section: sound"
+                echo "Priority: optional"
+                [ -n "${1:-}" ] && echo "Depends: $1"
+                echo "Installed-Size: $(du -sk "$STAGE/opt" "$STAGE/usr" | awk '{s+=$1} END {print s}')"
+                echo "Homepage: $URL"
+                echo "Description: $SUMMARY"
+                # Continuation lines are one space in; a blank one has to be a
+                # single full stop or dpkg reads it as the end of the field.
+                echo "$DESCRIPTION" | fold -s -w 76 | sed -e 's/^/ /' -e 's/^ $/ ./'
+            } > "$STAGE/DEBIAN/control"
+        }
+        write_control ""
+
+        DEPENDS=""
+        if command -v dpkg-shlibdeps >/dev/null 2>&1; then
+            # Every ELF file in the payload is analysed, not just the entry
+            # point: the bundled Qt is what pulls in most of the real
+            # dependencies. -l points at the bundled directories first, so a
+            # library we ship resolves to itself and produces no dependency,
+            # while anything it needs that we do not ship becomes one.
+            mapfile -t ELVES < <(find "$STAGE/opt/$NAME" -type f \
+                \( -name '*.so' -o -name '*.so.*' -o -perm -u+x \) 2>/dev/null \
+                | xargs -r file -N --mime-type 2>/dev/null \
+                | sed -n 's/: application\/x-\(sharedlib\|executable\|pie-executable\)$//p')
+
+            # Anything whose own dependencies cannot all be resolved is left
+            # out of the analysis. The PySide6 wheel ships Qt's full plugin
+            # set, and several of those plugins are backed by libraries the
+            # wheel does not carry - the SQL drivers, the Wayland compositor,
+            # eglfs. They could not load on any machine, so they have nothing
+            # to say about what this package needs, but dpkg-shlibdeps treats a
+            # library it cannot find as fatal and gives up on the whole run
+            # rather than on the one file.
+            UNRESOLVED=0
+            RESOLVED=()
+            for elf in ${ELVES+"${ELVES[@]}"}; do
+                if ldd "$elf" 2>/dev/null | grep -q 'not found'; then
+                    UNRESOLVED=$((UNRESOLVED + 1))
+                else
+                    RESOLVED+=("$elf")
+                fi
+            done
+            if [ "$UNRESOLVED" -gt 0 ]; then
+                echo "  ${UNRESOLVED} of ${#ELVES[@]} bundled objects have unresolved" \
+                     "libraries of their own and were left out of the dependency scan"
+            fi
+            ELVES=(${RESOLVED+"${RESOLVED[@]}"})
+
+            if [ ${#ELVES[@]} -gt 0 ]; then
+                # Every directory that holds a shared library, rather than a
+                # list of names: PyInstaller puts most of them under _internal/
+                # but not all, and this covers wherever they landed.
+                LIBDIRS=()
+                while IFS= read -r d; do LIBDIRS+=("-l$d"); done < <(
+                    find "$STAGE/opt/$NAME" -name '*.so' -o -name '*.so.*' \
+                        | xargs -r -n1 dirname | sort -u
+                )
+                # dpkg-shlibdeps insists on a debian/control in the working
+                # directory, which is not the DEBIAN/control above; it only
+                # reads it to learn the package name. A throwaway satisfies it.
+                SHLIBTMP=$(mktemp -d)
+                mkdir -p "$SHLIBTMP/debian"
+                printf 'Source: %s\nPackage: %s\nArchitecture: %s\n' \
+                    "$NAME" "$NAME" "$DEB_ARCH" > "$SHLIBTMP/debian/control"
+                DEPENDS=$( cd "$SHLIBTMP" && dpkg-shlibdeps -O --ignore-missing-info \
+                    ${LIBDIRS+"${LIBDIRS[@]}"} "${ELVES[@]}" 2>/dev/null \
+                    | sed 's/^shlibs:Depends=//' )
+                rm -rf "$SHLIBTMP"
+
+                # A shlibs file may express a version as a substitution
+                # variable, which means nothing outside a real debian/rules
+                # run and would ship literally. The package name on its own is
+                # still correct, just unversioned, so the clause is dropped.
+                DEPENDS=$(echo "$DEPENDS" | sed 's/ ([^)]*\${[^)]*)//g')
+            fi
+        fi
+        if [ -z "$DEPENDS" ]; then
+            echo "make_linux_package: no dependencies could be computed;" >&2
+            echo "  the .deb will rely on the desktop baseline being present." >&2
+        fi
+        write_control "$DEPENDS"
+
+        DEB="$OUTDIR/${STEM}-${VERSION}-${ARCH}.deb"
+        # --root-owner-group avoids needing fakeroot to get root:root inside.
+        if dpkg-deb --build --root-owner-group "$STAGE" "$DEB" >/dev/null; then
+            echo "Built $DEB"
+        else
+            echo "make_linux_package: dpkg-deb failed" >&2
+            exit 1
+        fi
+
+        # The rpm is built from the same tree, and DEBIAN is not part of it.
+        rm -rf "$STAGE/DEBIAN"
+    fi
+fi
+
+#===============================================
+# .rpm
+#===============================================
+if want rpm; then
+    if ! command -v rpmbuild >/dev/null 2>&1; then
+        echo "make_linux_package: rpmbuild not found - skipping the .rpm" >&2
+        echo "  Debian and Ubuntu: sudo apt install rpm" >&2
+        echo "  Fedora: sudo dnf install rpm-build" >&2
+    else
+        RPMTOP=$(mktemp -d)
+        mkdir -p "$RPMTOP/SPECS"
+        SPEC="$RPMTOP/SPECS/$NAME.spec"
+
+        {
+            # rpmbuild's default post-install steps are written for something
+            # it compiled itself: they strip binaries, generate a debuginfo
+            # package and rewrite interpreter lines. This payload is already
+            # built and stripping a bundled Qt gains nothing, so all of it is
+            # turned off.
+            echo '%global debug_package %{nil}'
+            echo '%global __os_install_post %{nil}'
+            echo '%define _build_id_links none'
+            echo
+            echo "Name:    $NAME"
+            echo "Version: $VERSION"
+            echo "Release: 1"
+            echo "Summary: $SUMMARY"
+            echo "License: $LICENSE"
+            echo "URL:     $URL"
+            echo "BuildArch: $ARCH"
+            # Everything unusual is inside the package. Left to itself rpm
+            # would advertise the bundled Qt sonames to the whole system, where
+            # another package could come to depend on them, and would demand
+            # the sonames back again as requirements. Both halves are wrong for
+            # a self-contained tree, so the automatic machinery is off; what is
+            # left is the desktop baseline, which is the same assumption the
+            # AppImage makes.
+            echo "AutoReqProv: no"
+            echo
+            echo "%description"
+            echo "$DESCRIPTION" | fold -s -w 76
+            echo
+            echo "%install"
+            echo 'rm -rf %{buildroot}'
+            echo 'mkdir -p %{buildroot}'
+            echo "cp -a $STAGE/. %{buildroot}/"
+            echo
+            echo "%files"
+            echo "/opt/$NAME"
+            echo "/usr/bin/$NAME"
+            echo "/usr/share/applications/$NAME.desktop"
+            echo "/usr/share/icons/hicolor/$ICON_SIZE/apps/$NAME.png"
+            # The directory rather than the copyright file alone, so that
+            # anything else staged in there is covered too; rpm refuses to
+            # build if a file reaches the buildroot without being listed.
+            # Listed as a plain path rather than with %doc, because the files
+            # are already in the buildroot and %doc would have rpm look for
+            # them in a build directory this spec never has.
+            echo "/usr/share/doc/$NAME"
+        } > "$SPEC"
+
+        if rpmbuild -bb --define "_topdir $RPMTOP" "$SPEC" >"$RPMTOP/log" 2>&1; then
+            BUILT=$(find "$RPMTOP/RPMS" -name '*.rpm' -type f | head -1)
+            RPM="$OUTDIR/${STEM}-${VERSION}-${ARCH}.rpm"
+            cp "$BUILT" "$RPM" && echo "Built $RPM"
+        else
+            echo "make_linux_package: rpmbuild failed" >&2
+            tail -25 "$RPMTOP/log" >&2
+            rm -rf "$RPMTOP"
+            exit 1
+        fi
+        rm -rf "$RPMTOP"
+    fi
+fi
+
+rm -rf "$STAGE"

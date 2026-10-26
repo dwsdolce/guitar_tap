@@ -1,4 +1,4 @@
-# Building installers (packaging/build_mac, build_linux, build_win.bat): everything for running from source,
+# Building installers (packaging/build_mac, build_linux, build_win): everything for running from source,
 # plus PyInstaller and the Quick Start Guide generator the macOS build runs.
 #   .venv/bin/pip install -r requirements-packaging.txt
 -r requirements.txt

@@ -1,8 +1,49 @@
 #!/bin/bash
 #
+# Build the Linux application bundle and its packages.
+#
+#   packaging/build_linux                  # all three packages
+#   packaging/build_linux app              # build only, no packages
+#   packaging/build_linux appimage         # one format, named explicitly
+#   packaging/build_linux deb,rpm          # or several
+#   packaging/build_linux help
+#
+# Produces:
+#   dist/guitar-tap/                                  the PyInstaller bundle
+#   dist/guitar-tap-<version>.<build>-<arch>.AppImage
+#   dist/guitar-tap-<version>.<build>-<arch>.deb
+#   dist/guitar-tap-<version>.<build>-<arch>.rpm
+#
+# The .deb and .rpm install the PyInstaller bundle under /opt - see
+# packaging/make_linux_package. They need dpkg-deb and rpmbuild respectively;
+# whichever is missing is reported and skipped rather than failing the build.
 
 # Run from the project root regardless of where this script is invoked from.
 cd "$(dirname "$0")/.."
+
+usage() {
+    echo "build_linux [app|appimage|deb|rpm]"
+    echo "  app  build only, runnable from dist/guitar-tap/guitar-tap"
+    echo "  the rest are package formats, comma-separated;"
+    echo "  the default is appimage,deb,rpm"
+}
+
+mode="${1:-appimage,deb,rpm}"
+case "$mode" in
+    help) usage; exit 0 ;;
+    app) ;;
+    *)
+        # Validated up front: a typo should not be discovered after PyInstaller
+        # has spent a minute collecting Qt.
+        for fmt in ${mode//,/ }; do
+            case "$fmt" in
+                appimage|deb|rpm) ;;
+                *) echo "Unknown format: $fmt"; usage; exit 1 ;;
+            esac
+        done
+        ;;
+esac
+want() { case ",$mode," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
 # Python: this repo's own .venv (.venv/bin on macOS and Linux, .venv/Scripts on Windows); PYTHON names another.
 if [ -z "${PYTHON:-}" ]; then
@@ -76,50 +117,91 @@ for entry in $BUNDLED_SYSTEM_LIBS; do
     fi
 done
 
-#===============================================
-# Assemble AppDir
-#===============================================
-APPDIR=dist/AppDir
-rm -rf "$APPDIR"
-mkdir -p "$APPDIR/usr/bin" \
-         "$APPDIR/usr/share/applications" \
-         "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-
-# Payload: the PyInstaller bundle directory.
-cp -r dist/guitar-tap "$APPDIR/usr/bin/"
-
-# Desktop entry — appimagetool requires it at both AppDir root and usr/share/applications.
-cp packaging/guitar-tap.desktop "$APPDIR/"
-cp packaging/guitar-tap.desktop "$APPDIR/usr/share/applications/"
-
-# Icon — 256x256 PNG at AppDir root (as guitar-tap.png, matching the desktop Icon= name)
-# and in the hicolor theme.
-cp src/guitar_tap/icons/guitar-tap-256.png "$APPDIR/guitar-tap.png"
-cp src/guitar_tap/icons/guitar-tap-256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/guitar-tap.png"
-
-# AppRun launcher.
-cp packaging/AppRun "$APPDIR/AppRun"
-chmod +x "$APPDIR/AppRun"
-
-#===============================================
-# Build the AppImage
-#===============================================
-# The current appimagetool (github.com/AppImage/appimagetool), whose static runtime needs no libfuse2 on the
-# user's system — not the old AppImageKit one. Releases are built by .github/workflows/release.yml on the
-# oldest supported Ubuntu LTS; a build here starts only on Linux as new as this machine's.
-APPIMAGETOOL="${APPIMAGETOOL:-$HOME/bin/appimagetool}"
-if [ ! -x "$APPIMAGETOOL" ]; then
-    echo "appimagetool not found at $APPIMAGETOOL"
-    echo "Download appimagetool-x86_64.AppImage from https://github.com/AppImage/appimagetool/releases"
-    echo "or set APPIMAGETOOL=/path/to/appimagetool"
-    exit 1
+if [ "$mode" = "app" ]; then
+    echo "Built dist/guitar-tap - run dist/guitar-tap/guitar-tap"
+    exit 0
 fi
 
 ARCH=$(uname -m)
-OUT="dist/guitar-tap-${VERSION}-${ARCH}.AppImage"
-ARCH=$ARCH "$APPIMAGETOOL" "$APPDIR" "$OUT"
-if [ $? -ne 0 ]; then
-    echo "appimagetool failed"
-    exit 1
+ICON=src/guitar_tap/icons/guitar-tap-256.png
+
+#===============================================
+# Assemble AppDir and build the AppImage
+#===============================================
+# Only for the AppImage. The .deb and .rpm are built straight from the
+# PyInstaller bundle below, so when no AppImage is wanted there is no reason to
+# copy the bundle a second time.
+if want appimage; then
+    APPDIR=dist/AppDir
+    rm -rf "$APPDIR"
+    mkdir -p "$APPDIR/usr/bin" \
+             "$APPDIR/usr/share/applications" \
+             "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+
+    # Payload: the PyInstaller bundle directory.
+    cp -r dist/guitar-tap "$APPDIR/usr/bin/"
+
+    # Desktop entry — appimagetool requires it at both AppDir root and usr/share/applications.
+    cp packaging/guitar-tap.desktop "$APPDIR/"
+    cp packaging/guitar-tap.desktop "$APPDIR/usr/share/applications/"
+
+    # Icon — 256x256 PNG at AppDir root (as guitar-tap.png, matching the desktop Icon= name)
+    # and in the hicolor theme.
+    cp "$ICON" "$APPDIR/guitar-tap.png"
+    cp "$ICON" "$APPDIR/usr/share/icons/hicolor/256x256/apps/guitar-tap.png"
+
+    # AppRun launcher.
+    cp packaging/AppRun "$APPDIR/AppRun"
+    chmod +x "$APPDIR/AppRun"
+
+    # The current appimagetool (github.com/AppImage/appimagetool), whose static runtime needs no libfuse2 on the
+    # user's system — not the old AppImageKit one. Releases are built by .github/workflows/release.yml on the
+    # oldest supported Ubuntu LTS; a build here starts only on Linux as new as this machine's.
+    APPIMAGETOOL="${APPIMAGETOOL:-$HOME/bin/appimagetool}"
+    if [ ! -x "$APPIMAGETOOL" ]; then
+        echo "appimagetool not found at $APPIMAGETOOL"
+        echo "Download appimagetool-x86_64.AppImage from https://github.com/AppImage/appimagetool/releases"
+        echo "or set APPIMAGETOOL=/path/to/appimagetool"
+        exit 1
+    fi
+
+    OUT="dist/guitar-tap-${VERSION}-${ARCH}.AppImage"
+    ARCH=$ARCH "$APPIMAGETOOL" "$APPDIR" "$OUT"
+    if [ $? -ne 0 ]; then
+        echo "appimagetool failed"
+        exit 1
+    fi
+    echo "Built $OUT"
 fi
-echo "Built $OUT"
+
+#===============================================
+# .deb and .rpm
+#===============================================
+# PyInstaller has already produced a directory that runs in place, carrying its
+# own Python and Qt, so it is the payload as it stands - no AppDir in between.
+# The AppImage's AppRun is not carried over either: a package installs a wrapper
+# in /usr/bin instead. See packaging/make_linux_package.
+pkg_formats=""
+want deb && pkg_formats="deb"
+want rpm && pkg_formats="${pkg_formats:+$pkg_formats,}rpm"
+
+if [ -n "$pkg_formats" ]; then
+    packaging/make_linux_package \
+        --name guitar-tap \
+        --stem guitar-tap \
+        --version "$VERSION" \
+        --payload dist/guitar-tap \
+        --binary guitar-tap \
+        --desktop packaging/guitar-tap.desktop \
+        --icon "$ICON" \
+        --icon-size 256x256 \
+        --copyright LICENSE \
+        --summary "Tap-tone analysis for luthiers" \
+        --description "Guitar Tap captures a tap, runs an FFT, and reveals a guitar's resonant modes and a tonewood's stiffness." \
+        --outdir dist \
+        --formats "$pkg_formats"
+    if [ $? -ne 0 ]; then
+        echo "Building the packages failed"
+        exit 1
+    fi
+fi

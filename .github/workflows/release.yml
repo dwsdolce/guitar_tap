@@ -1,5 +1,5 @@
-# The release builds made on GitHub — the Linux AppImage and the Windows installer — attached to a draft GitHub
-# release, or kept as the run's artifacts. The macOS .dmg (signed and notarised with the owner's Apple credentials)
+# The release builds made on GitHub — the Linux AppImage, .deb and .rpm and the Windows installer — attached to a
+# draft GitHub release with their SHA256SUMS, or kept as the run's artifacts. The macOS .dmg (signed and notarised with the owner's Apple credentials)
 # and the PDFs are built by hand (packaging/build_mac) and uploaded to the draft.
 #
 # Run by hand (Actions → Release → Run workflow), for:
@@ -34,10 +34,11 @@ env:
   REF: ${{ inputs.ref }}
 
 jobs:
-  # The Linux AppImage, built on the oldest supported Ubuntu LTS so it starts on every supported Linux. An AppImage
-  # uses the system's C library, so the machine it is built on sets the oldest Linux it runs on: here Ubuntu 22.04
-  # (glibc 2.35), with the Python that setup-python builds for it. The current appimagetool embeds a static runtime,
-  # which needs no libfuse2 on the user's system.
+  # The Linux AppImage, .deb and .rpm, built on the oldest supported Ubuntu LTS so they start on every supported
+  # Linux. The built app uses the system's C library, so the machine it is built on sets the oldest Linux it runs on:
+  # here Ubuntu 22.04 (glibc 2.35), with the Python that setup-python builds for it. The current appimagetool embeds
+  # a static runtime, which needs no libfuse2 on the user's system. The .deb and .rpm carry the same built app
+  # (packaging/make_linux_package).
   linux:
     runs-on: ubuntu-22.04
     defaults:
@@ -57,13 +58,15 @@ jobs:
         with:
           python-version: "3.14"
 
-      # The libraries Qt needs to start, as a Linux desktop has them; and the two the build bundles
+      # The libraries Qt needs to start, as a Linux desktop has them; the two the build bundles
       # (packaging/build_linux checks both): libxcb-cursor0, which Qt needs to open a window under X11 and not
-      # every desktop has, and PortAudio, which the start test then removes.
+      # every desktop has, and PortAudio, which the start test then removes; and what makes the .deb (dpkg-dev)
+      # and the .rpm (rpm).
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libxcb-cursor0 libportaudio2
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libxcb-cursor0 libportaudio2 \
+            dpkg-dev rpm
 
       - name: Python environment
         run: |
@@ -86,7 +89,10 @@ jobs:
         run: ./packaging/build_linux
 
       - name: Check the version and build
-        run: packaging/check_release_build "dist/guitar-tap-*.AppImage"
+        run: |
+          for format in AppImage deb rpm; do
+            packaging/check_release_build "dist/guitar-tap-*.$format"
+          done
 
       # The oldest Linux it starts on: the newest glibc symbol any bundled library needs, and a runtime that
       # does not link libfuse2.
@@ -139,10 +145,59 @@ jobs:
           grep -q "audio backend: library .*/_internal/libportaudio.so.2" start.log \
               || { echo "The bundled PortAudio was not the one loaded"; exit 1; }
 
+      # The .deb installs with apt, with the dependencies dpkg-shlibdeps found; the app is on the PATH and in the
+      # applications menu, and starts as the AppImage does. Removed again, nothing is left in /opt.
+      - name: .deb install and start test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          GT_TEST_SANDBOX: "1"
+          GT_AUDIO_BACKEND_REPORT: "1"
+        run: |
+          dpkg-deb --field "$(ls dist/guitar-tap-*.deb)" Depends
+          sudo apt-get install -y "./$(ls dist/guitar-tap-*.deb)"
+          test -f /usr/share/applications/guitar-tap.desktop
+          set +e
+          timeout 20 guitar-tap > start-deb.log 2>&1
+          code=$?
+          set -e
+          tail -30 start-deb.log
+          echo "exit code $code (124: still running when stopped, as wanted)"
+          [ "$code" = 124 ] || exit 1
+          if grep -q "Traceback" start-deb.log; then echo "An error was raised while starting"; exit 1; fi
+          grep -q "audio backend: library /opt/guitar-tap/_internal/libportaudio.so.2" start-deb.log \
+              || { echo "The bundled PortAudio was not the one loaded"; exit 1; }
+          sudo apt-get remove -y guitar-tap
+          [ ! -e /opt/guitar-tap ] || { echo "/opt/guitar-tap is left after removing"; exit 1; }
+
+      # The .rpm installs with dnf on Fedora, in a container. It declares no dependencies (AutoReqProv: no), so the
+      # libraries a Fedora desktop has are installed first, as the start test needs them; then it starts as above.
+      - name: .rpm install and start test
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" fedora:latest bash -c '
+            set -e
+            dnf install -y -q mesa-libEGL mesa-libGL libxkbcommon fontconfig dbus-libs alsa-lib xcb-util-cursor
+            dnf install -y -q /dist/guitar-tap-*.rpm
+            test -f /usr/share/applications/guitar-tap.desktop
+            set +e
+            QT_QPA_PLATFORM=offscreen GT_TEST_SANDBOX=1 GT_AUDIO_BACKEND_REPORT=1 timeout 20 guitar-tap > /tmp/start.log 2>&1
+            code=$?
+            set -e
+            tail -30 /tmp/start.log
+            echo "exit code $code (124: still running when stopped, as wanted)"
+            [ "$code" = 124 ]
+            ! grep -q "Traceback" /tmp/start.log
+            grep -q "audio backend: library /opt/guitar-tap/_internal/libportaudio.so.2" /tmp/start.log
+            dnf remove -y -q guitar-tap
+            [ ! -e /opt/guitar-tap ]
+          '
+
       - uses: actions/upload-artifact@v7
         with:
-          name: guitar-tap-appimage
-          path: dist/guitar-tap-*.AppImage
+          name: guitar-tap-linux
+          path: |
+            dist/guitar-tap-*.AppImage
+            dist/guitar-tap-*.deb
+            dist/guitar-tap-*.rpm
           if-no-files-found: error
 
   # The Windows installer: PyInstaller, then Inno Setup (packaging/build_win). Not signed.
@@ -201,7 +256,7 @@ jobs:
 
   # The draft release: a draft for the release's tag, created at the built commit; GitHub creates the tag only when
   # the draft is published (an existing tag stays as it is). An existing draft gets the files, replacing ones of the
-  # same name.
+  # same name. SHA256SUMS lists the files this workflow attaches.
   draft:
     if: ${{ inputs.draft }}
     needs: [linux, windows]
@@ -224,7 +279,9 @@ jobs:
 
       - name: Attach to the draft release
         run: |
+          (cd files && sha256sum -- * > SHA256SUMS)
           ls -l files
+          cat files/SHA256SUMS
           if gh release view "$RELEASE" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
             gh release upload "$RELEASE" files/* --clobber
           elif gh release view "$RELEASE" >/dev/null 2>&1; then

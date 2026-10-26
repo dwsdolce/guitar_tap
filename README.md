@@ -127,16 +127,17 @@ A green soak is **confidence, not proof** — use a few hundred to ~1000 runs.
 Set up for building installers (`requirements-packaging.txt`, see *Setting up on a new machine*).
 
 Then run the platform script from the repository root:
-	- Linux:   `./packaging/build_linux`
+	- Linux:   `./packaging/build_linux` (the AppImage, `.deb` and `.rpm`; `build_linux help` for one of them, or `app`
+	  for the built app alone)
 	- macOS:   `./packaging/build_mac`
 	- Windows: `./packaging/build_win` (Cygwin bash)
 
 ### Platform-specific tooling
 
-**Linux (AppImage) and Windows (installer):** a release's AppImage and Windows installer are built by GitHub
-Actions (`.github/workflows/release.yml`, run by hand for the tag: Actions → Release → Run workflow) and attached to
-its draft release — the AppImage on Ubuntu 22.04, the oldest supported LTS, since an AppImage starts only on Linux as
-new as the machine it was built on. Run for a branch or commit, it keeps them as the run's artifacts, or puts them on
+**Linux (AppImage, .deb, .rpm) and Windows (installer):** a release's Linux packages and Windows installer are built
+by GitHub Actions (`.github/workflows/release.yml`, run by hand for the tag: Actions → Release → Run workflow) and
+attached to its draft release with their `SHA256SUMS` — the Linux ones on Ubuntu 22.04, the oldest supported LTS,
+since the built app starts only on Linux as new as the machine it was built on. Run for a branch or commit, it keeps them as the run's artifacts, or puts them on
 a test draft (`release-test-<n>`) to delete. To build one locally, `build_linux` invokes the current `appimagetool`, whose
 runtime needs no `libfuse2` on the user's system:
 	- `wget -O ~/bin/appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage`
@@ -144,6 +145,8 @@ runtime needs no `libfuse2` on the user's system:
 	- If `appimagetool` is elsewhere, set `APPIMAGETOOL=/path/to/appimagetool` before running `build_linux`.
 	- `sudo apt install libportaudio2 libxcb-cursor0`: the build bundles both, so the app needs neither on the user's
 	  system; `build_linux` stops if either is missing.
+	- `sudo apt install dpkg-dev rpm` for the `.deb` and `.rpm` (`packaging/make_linux_package`, unsigned); without
+	  them `build_linux` says so and skips that package.
 
 **Windows:** the installer step uses [Inno Setup 6](https://jrsoftware.org/isinfo.php) — install it in its default folder (`C:\Program Files (x86)\Inno Setup 6`), where `build_win` runs `ISCC.exe`. The Windows build is not code-signed.
 
