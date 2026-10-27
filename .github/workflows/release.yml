@@ -146,31 +146,35 @@ jobs:
               || { echo "The bundled PortAudio was not the one loaded"; exit 1; }
 
       # The .deb installs with apt, with the dependencies dpkg-shlibdeps found; the app is on the PATH and in the
-      # applications menu, and starts as the AppImage does. Removed again, nothing is left in /opt.
-      - name: .deb install and start test
+      # applications menu, starts as the AppImage does, and quits cleanly: in a window on an X display, as on a
+      # desktop, and closed by Ctrl+C, whose handler closes the window as its close button does. Removed again,
+      # nothing is left in /opt.
+      - name: .deb install, start and quit test
         env:
-          QT_QPA_PLATFORM: offscreen
           GT_TEST_SANDBOX: "1"
           GT_AUDIO_BACKEND_REPORT: "1"
         run: |
+          sudo apt-get install -y xvfb libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
           dpkg-deb --field "$(ls dist/guitar-tap-*.deb)" Depends
           sudo apt-get install -y "./$(ls dist/guitar-tap-*.deb)"
           test -f /usr/share/applications/guitar-tap.desktop
           set +e
-          timeout 20 guitar-tap > start-deb.log 2>&1
+          xvfb-run -a timeout --preserve-status -k 10 -s INT 20 guitar-tap > start-deb.log 2>&1
           code=$?
           set -e
           tail -30 start-deb.log
-          echo "exit code $code (124: still running when stopped, as wanted)"
-          [ "$code" = 124 ] || exit 1
-          if grep -q "Traceback" start-deb.log; then echo "An error was raised while starting"; exit 1; fi
+          echo "exit code $code (0: quit cleanly when closed, as wanted)"
+          [ "$code" = 0 ] || exit 1
+          if grep -q -E "Traceback|Fatal Python error" start-deb.log; then echo "An error was raised"; exit 1; fi
           grep -q "audio backend: library /opt/guitar-tap/_internal/libportaudio.so.2" start-deb.log \
               || { echo "The bundled PortAudio was not the one loaded"; exit 1; }
           sudo apt-get remove -y guitar-tap
           [ ! -e /opt/guitar-tap ] || { echo "/opt/guitar-tap is left after removing"; exit 1; }
 
       # The .rpm installs with dnf on Fedora, in a container. It declares no dependencies (AutoReqProv: no), so the
-      # libraries a Fedora desktop has are installed first, as the start test needs them; then it starts as above.
+      # libraries a Fedora desktop has are installed first, as the start test needs them; then it starts and quits
+      # as above, off-screen.
       - name: .rpm install and start test
         run: |
           docker run --rm -v "$PWD/dist:/dist:ro" fedora:latest bash -c '
@@ -179,13 +183,14 @@ jobs:
             dnf install -y -q /dist/guitar-tap-*.rpm
             test -f /usr/share/applications/guitar-tap.desktop
             set +e
-            QT_QPA_PLATFORM=offscreen GT_TEST_SANDBOX=1 GT_AUDIO_BACKEND_REPORT=1 timeout 20 guitar-tap > /tmp/start.log 2>&1
+            QT_QPA_PLATFORM=offscreen GT_TEST_SANDBOX=1 GT_AUDIO_BACKEND_REPORT=1 \
+              timeout --preserve-status -k 10 -s INT 20 guitar-tap > /tmp/start.log 2>&1
             code=$?
             set -e
             tail -30 /tmp/start.log
-            echo "exit code $code (124: still running when stopped, as wanted)"
-            [ "$code" = 124 ]
-            ! grep -q "Traceback" /tmp/start.log
+            echo "exit code $code (0: quit cleanly when closed, as wanted)"
+            [ "$code" = 0 ]
+            ! grep -q -E "Traceback|Fatal Python error" /tmp/start.log
             grep -q "audio backend: library /opt/guitar-tap/_internal/libportaudio.so.2" /tmp/start.log
             dnf remove -y -q guitar-tap
             [ ! -e /opt/guitar-tap ]

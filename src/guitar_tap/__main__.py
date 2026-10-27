@@ -80,6 +80,7 @@ from guitar_tap import _colour_guard, _release_guard
 _release_guard.enforce()
 _colour_guard.enforce()
 
+import shiboken6
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
@@ -223,8 +224,14 @@ if __name__ == "__main__":
     # thread" as its DLL unloads. This is Qt teardown only; PortAudio was closed in closeEvent.
     # Skipped if the processing thread outlived closeEvent's wait: destroying a running QThread
     # aborts the process, so that exit keeps the warning instead.
+    # The main window is deleted first, as one tree. shutdown() deletes every object PySide counts
+    # as Python's, in no set order — and that includes widgets built without a parent and then put
+    # in a layout, which Qt has since given a parent in the window. Deleted after the window, such a
+    # widget is deleted twice, and the process crashes on quit; deleted with the window, PySide
+    # learns it is gone.
     try:
         if not app.fft_canvas.analyzer.mic.proc_thread.isRunning():
+            shiboken6.delete(app)
             qapp.shutdown()
         else:
             gt_log("⚠️ Processing thread still running at exit — Qt teardown skipped")
