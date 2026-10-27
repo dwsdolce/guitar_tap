@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer  # noqa: E402
+from guitar_tap.models.tap_tone_analyzer_measurement_management import ImportFile  # noqa: E402
 from guitar_tap.views.tap_analysis_results_view import load_all_measurements, measurements_file  # noqa: E402
 
 _HERE = os.path.dirname(__file__)
@@ -38,6 +39,7 @@ def test_library(row, qapp):
     sut = TapToneAnalyzer.for_testing()
     sut.saved_measurements.clear()
     message = None
+    imported = None
     stored = None
     for step in row["steps"]:
         if "libraryHolds" in step:
@@ -48,6 +50,11 @@ def test_library(row, qapp):
         elif "import" in step:
             data = json.dumps([MEASUREMENTS[n] for n in step["import"]]).encode("utf-8")
             message = sut.import_and_load_measurements(data)
+        elif "importFiles" in step:
+            chosen = [ImportFile(f["file"], json.dumps([MEASUREMENTS[n] for n in f["holds"]]).encode("utf-8"))
+                      for f in step["importFiles"]]
+            report = sut.import_files(chosen)
+            message, imported = report.message, report.imported
         elif "importFails" in step:
             data = json.dumps([MEASUREMENTS[n] for n in step["importFails"]]).encode("utf-8")
             with pytest.raises(Exception) as failure:
@@ -92,6 +99,10 @@ def test_library(row, qapp):
                     assert actual == FILE_IDS[name], f"{field}: {name}'s own id"
         elif field == "message":
             assert message == want, f"{field}: {message!r}"
+        elif field == "imported":
+            assert imported is want, field
+        elif field == "loaded":
+            assert sut.loaded_measurement_name == want, f"{field}: {sut.loaded_measurement_name!r}"
         elif field == "messageStartsWith":
             assert message is not None and message.startswith(want), f"{field}: {message!r}"
         elif field == "microphoneWarning":

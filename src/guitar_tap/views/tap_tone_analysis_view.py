@@ -18,6 +18,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 import guitar_tap.models.material_properties as PA
 import guitar_tap.views.shared.peak_card_widget as PT
 import guitar_tap.views.tap_analysis_results_view as M
+from guitar_tap.views.measurements import export_menus
 import guitar_tap.views.utilities.tap_settings_view as AS
 from guitar_tap.models import TapToneMeasurement
 from guitar_tap.models import field_precision as fp
@@ -1759,23 +1760,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _footer_row.addStretch()
 
-        # Swift: Label(…, systemImage:) at .controlSize(.small).
-        self.export_spectrum_btn = QtWidgets.QPushButton("Export Spectrum")
-        palette.tag(self.export_spectrum_btn, plain=True)
-        self.export_spectrum_btn.setFont(small_font)
-        palette.set_icon(self.export_spectrum_btn, "mdi.chart-line", palette.Role.TEXT_PRIMARY)
-        self.export_spectrum_btn.setEnabled(False)
-        self.export_spectrum_btn.setToolTip("Export the current spectrum as a PNG image")
-        _footer_row.addWidget(self.export_spectrum_btn)
-
-        self.export_pdf_btn = QtWidgets.QPushButton("Export PDF")
-        palette.tag(self.export_pdf_btn, plain=True)
-        self.export_pdf_btn.setFont(small_font)
-        palette.set_icon(
-            self.export_pdf_btn, "mdi.file-document-outline", palette.Role.TEXT_PRIMARY)
-        self.export_pdf_btn.setEnabled(False)
-        self.export_pdf_btn.setToolTip("Export the current measurement to a PDF report")
-        _footer_row.addWidget(self.export_pdf_btn)
+        # One Export button, its menu Analysis Results' (export_menus.ANALYSIS_RESULTS): the spectrum image and the
+        # PDF report, as a saved measurement's menu has them. Swift: a Menu with Label(…, systemImage:) at
+        # .controlSize(.small).
+        results_menu = export_menus.ANALYSIS_RESULTS
+        self.results_export_btn = QtWidgets.QPushButton(f"{results_menu.button} \u25BE")  # ▾: a menu
+        palette.tag(self.results_export_btn, plain=True)
+        self.results_export_btn.setFont(small_font)
+        palette.set_icon(self.results_export_btn, f"mdi.{results_menu.mdi}", palette.Role.TEXT_PRIMARY)
+        self.results_export_btn.setStyleSheet("QPushButton::menu-indicator { image: none; width: 0px; }")
+        self.results_export_btn.setEnabled(False)
+        self.results_export_btn.setToolTip("Export the spectrum image or the PDF report")
+        self._results_export_menu = QtWidgets.QMenu(self.results_export_btn)
+        self.results_export_btn.setMenu(self._results_export_menu)
+        _footer_row.addWidget(self.results_export_btn)
 
         vbox.addLayout(_footer_row)
 
@@ -2275,8 +2273,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.new_tap_btn.clicked.connect(self._on_new_tap)
         self.save_measurement_btn.clicked.connect(self._on_save_measurement)
         self.open_measurements_btn.clicked.connect(self._on_open_measurements)
-        self.export_spectrum_btn.clicked.connect(self._on_export_spectrum)
-        self.export_pdf_btn.clicked.connect(self._on_export_pdf)
+        results_handlers = {"exportSpectrum": self._on_export_spectrum, "exportPDF": self._on_export_pdf}
+        for i, group in enumerate(export_menus.ANALYSIS_RESULTS.groups):
+            if i:
+                self._results_export_menu.addSeparator()
+            for entry in group:
+                palette.add_menu_item(self._results_export_menu, f"mdi.{entry.mdi}", entry.title,
+                                      results_handlers[entry.action])
 
         # Tap accumulator
         self.tap_num_stepper.valueChanged.connect(self._on_tap_num_changed)
@@ -2907,11 +2910,11 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _update_save_export_enabled(self) -> None:
-        """Enable Save, Export Spectrum and Export PDF — buttons and menu items — only when there is
+        """Enable Save and Analysis Results' Export — buttons and menu items — only when there is
         something to save or export (the analyzer's ``has_result_to_save_or_export``). Mirrors Swift's
         buttons and menu commands reading ``hasResultToSaveOrExport``."""
         enabled = self.fft_canvas.analyzer.has_result_to_save_or_export
-        for widget in (self.save_measurement_btn, self.export_spectrum_btn, self.export_pdf_btn,
+        for widget in (self.save_measurement_btn, self.results_export_btn,
                        self._menu_save_action, self._menu_export_spectrum_action,
                        self._menu_export_pdf_action):
             widget.setEnabled(enabled)
@@ -4327,8 +4330,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Save / Export ──────────────────────────────────────────────────────
         # Save and both exports stay available in a comparison (Save routes to save_comparison(), Export
-        # PDF writes the comparison report). Mirrors Swift.
-        self.export_pdf_btn.setVisible(True)
+        # PDF Report writes the comparison report). Mirrors Swift.
         self._update_save_export_enabled()
 
         # ── Threshold / Peak Min controls ──────────────────────────────────────
@@ -5773,7 +5775,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # The picker and the details, once both exist; every later change refreshes them the same way.
         _update_cal_display()
 
-        delete_cal_btn = QtWidgets.QPushButton("Delete All Calibrations")
+        delete_cal_btn = QtWidgets.QPushButton("Delete All Calibrations\u2026")  # it asks first: "…" (style guide S9)
         palette.set_icon(delete_cal_btn, "mdi.trash-can-outline", palette.Role.ACCENT)
         palette.tag(delete_cal_btn, tint=palette.Role.ACCENT)
         delete_cal_btn.setSizePolicy(

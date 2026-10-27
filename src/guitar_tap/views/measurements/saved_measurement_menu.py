@@ -18,8 +18,9 @@ class SavedMeasurementMenuEntry(NamedTuple):
     mdi: str  # the Material Design icon, as qtawesome names it without "mdi." — Swift's SF Symbol's nearest
 
 
-# A saved measurement's menu, in the groups a separator divides. Swift's Mac edition also has Save Measurement to
-# Disk… (its Export Measurement is a share sheet); here Export Measurement already saves through a dialog.
+# A saved measurement's menu, in the groups a separator divides. Export writes the file through a save dialog. Swift
+# also has Share, in a group of its own after Export's: the share sheet, which this edition does not have. "…" as
+# style guide S9.
 GROUPS: list[list[SavedMeasurementMenuEntry]] = [
     [
         SavedMeasurementMenuEntry("load", "Load into View", "file-download-outline"),
@@ -27,9 +28,11 @@ GROUPS: list[list[SavedMeasurementMenuEntry]] = [
     [
         SavedMeasurementMenuEntry("details", "View Details", "eye-outline"),
         SavedMeasurementMenuEntry("edit", "Edit Name & Notes", "pencil-outline"),
-        SavedMeasurementMenuEntry("exportMeasurement", "Export Measurement", "file-export-outline"),
-        SavedMeasurementMenuEntry("exportSpectrum", "Export Spectrum", "chart-line"),
-        SavedMeasurementMenuEntry("exportPDF", "Export PDF Report", "file-pdf-box"),
+    ],
+    [
+        SavedMeasurementMenuEntry("exportMeasurement", "Export Measurement…", "file-export-outline"),
+        SavedMeasurementMenuEntry("exportSpectrum", "Export Spectrum…", "chart-line"),
+        SavedMeasurementMenuEntry("exportPDF", "Export PDF Report…", "file-pdf-box"),
     ],
     [
         SavedMeasurementMenuEntry("delete", "Delete", "trash-can-outline"),

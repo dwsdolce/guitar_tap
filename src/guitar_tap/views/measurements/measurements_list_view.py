@@ -23,6 +23,7 @@ import os
 from PySide6 import QtCore, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
+from guitar_tap.models.tap_tone_analyzer_measurement_management import ImportFile
 from guitar_tap.models import saved_measurements_order as SMO
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS
 from guitar_tap.views import tap_analysis_results_view as M
@@ -30,7 +31,7 @@ from guitar_tap.views.exportable_spectrum_chart import ExportRenderError
 from guitar_tap.views.measurements import edit_measurement_view as EMV
 from guitar_tap.views.measurements import measurement_detail_view as MDD
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
-from guitar_tap.views.measurements import saved_measurement_menu
+from guitar_tap.views.measurements import export_menus, saved_measurement_menu
 from guitar_tap.views.shared.empty_state_view import EmptyStateView
 from guitar_tap.views.utilities import palette
 
@@ -61,9 +62,11 @@ class MeasurementsDialog(QtWidgets.QDialog):
         palette.surface(self, palette.Role.BACKGROUND_PANEL)
 
         self._compare_mode: bool = False
-        # Delete › Selected…: ticking rows to delete, as compare mode ticks rows to compare.
-        self._delete_mode: bool = False
-        self._delete_indices: set[int] = set()
+        # What a select mode is ticking rows for — "delete" (Delete › Selected…) or "export" (the Export menu's
+        # Export Selected…) — as compare mode ticks rows to compare; None when no select mode is on. Mirrors Swift
+        # selectingFor.
+        self._selecting_for: "str | None" = None
+        self._selected_indices: set[int] = set()
         self._compare_indices: set[int] = set()  # mirrors Swift selectedCompareIndices: Set<Int>
 
         self._build_ui()
@@ -151,18 +154,27 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._sort_btn.setMenu(self._sort_menu)
         btn_row.addWidget(self._sort_btn)
 
-        self._import_btn = QtWidgets.QPushButton("Import")
+        self._import_btn = QtWidgets.QPushButton("Import\u2026")
         palette.set_icon(self._import_btn, "mdi.download-outline", palette.Role.TEXT_PRIMARY)
-        self._import_btn.setToolTip("Import measurements from a .json or .guitartap file (one or many)")
+        self._import_btn.setToolTip("Import measurements from one or more .guitartap or .json files")
         self._import_btn.clicked.connect(self._on_import)
         btn_row.addWidget(self._import_btn)
 
-        self._export_all_btn = QtWidgets.QPushButton("Export All")
-        palette.set_icon(self._export_all_btn, "mdi.upload-outline", palette.Role.TEXT_PRIMARY)
-        self._export_all_btn.setToolTip(
-            "Export the whole library as one .guitartap file (backup / move to another machine)"
-        )
-        self._export_all_btn.clicked.connect(self._export_all)
+        # Export — a menu (export_menus.PANEL): Export All… and Export Selected… (tick the rows to export, as
+        # Delete's Selected… does), each as one .guitartap file. Mirrors Swift's library menu.
+        panel = export_menus.PANEL
+        self._export_all_btn = QtWidgets.QPushButton(f"{panel.button} \u25BE")  # ▾: a menu
+        palette.set_icon(self._export_all_btn, f"mdi.{panel.mdi}", palette.Role.TEXT_PRIMARY)
+        self._export_all_btn.setToolTip("Export all the measurements, or the ones you select, as one .guitartap file")
+        self._export_all_btn.setStyleSheet("QPushButton::menu-indicator { image: none; width: 0px; }")
+        export_menu = QtWidgets.QMenu(self._export_all_btn)
+        panel_handlers = {"exportAll": self._export_all, "exportSelected": lambda: self._enter_select_mode("export")}
+        for i, group in enumerate(panel.groups):
+            if i:
+                export_menu.addSeparator()
+            for entry in group:
+                palette.add_menu_item(export_menu, f"mdi.{entry.mdi}", entry.title, panel_handlers[entry.action])
+        self._export_all_btn.setMenu(export_menu)
         btn_row.addWidget(self._export_all_btn)
 
         # Delete — a menu: All…, Duplicates… (disabled when there are none) and Selected… (tick the rows to delete,
@@ -172,9 +184,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._delete_all_btn.setToolTip("Delete all measurements, the duplicates, or the ones you select")
         self._delete_all_btn.setStyleSheet("QPushButton::menu-indicator { image: none; width: 0px; }")
         delete_menu = QtWidgets.QMenu(self._delete_all_btn)
-        delete_menu.addAction("All…", self._on_delete_all)
-        self._delete_duplicates_action = delete_menu.addAction("Duplicates…", self._on_delete_duplicates)
-        delete_menu.addAction("Selected…", self._enter_delete_mode)
+        # Each item with its icon, as Swift's (trash, square.on.square, checkmark.circle).
+        palette.add_menu_item(delete_menu, "mdi.trash-can-outline", "All…", self._on_delete_all)
+        self._delete_duplicates_action = palette.add_menu_item(
+            delete_menu, "mdi.content-copy", "Duplicates…", self._on_delete_duplicates)
+        palette.add_menu_item(delete_menu, "mdi.check-circle-outline", "Selected…",
+                              lambda: self._enter_select_mode("delete"))
         delete_menu.aboutToShow.connect(
             lambda: self._delete_duplicates_action.setEnabled(bool(self._analyzer.duplicate_measurement_indices)))
         self._delete_all_btn.setMenu(delete_menu)
@@ -228,7 +243,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._compare_btn.setEnabled(
             comparable >= 2 if not self._compare_mode else True
         )
-        selecting = self._compare_mode or self._delete_mode
+        selecting = self._compare_mode or self._selecting_for is not None
         self._import_btn.setEnabled(not selecting)
         self._export_all_btn.setEnabled(has and not selecting)
         self._delete_all_btn.setEnabled(has and not selecting)
@@ -239,27 +254,28 @@ class MeasurementsDialog(QtWidgets.QDialog):
         for idx in self._shown:
             m = self._measurements[idx]
             # Comparison records are never eligible for compare-mode selection.
-            # Any measurement can be deleted; only one with a spectrum can be compared.
-            eligible = self._delete_mode or (m.spectrum_snapshot is not None and not m.is_comparison)
-            selected = idx in (self._delete_indices if self._delete_mode else self._compare_indices)
+            # Any measurement can be deleted or exported; only one with a spectrum can be compared.
+            ticking = self._selecting_for is not None
+            eligible = ticking or (m.spectrum_snapshot is not None and not m.is_comparison)
+            selected = idx in (self._selected_indices if ticking else self._compare_indices)
 
             item = QtWidgets.QListWidgetItem()
             row = MeasurementRowView(
                 m,
-                compare_mode=self._compare_mode or self._delete_mode,
+                compare_mode=self._compare_mode or ticking,
                 compare_selected=selected,
                 compare_eligible=eligible,
             )
             item.setSizeHint(row.sizeHint())
 
-            if (self._compare_mode or self._delete_mode) and not eligible:
+            if (self._compare_mode or ticking) and not eligible:
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
 
             self._list.addItem(item)
             self._list.setItemWidget(item, row)
 
-            if self._delete_mode:
-                row.clicked.connect(lambda checked=False, i=idx: self._toggle_delete(i))
+            if ticking:
+                row.clicked.connect(lambda checked=False, i=idx: self._toggle_selected(i))
             elif self._compare_mode:
                 # Row click toggles selection by index, then rebuilds.
                 # Using index (not m.id) so duplicate-imported measurements each
@@ -284,10 +300,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._update_compare_btn()
 
     def _update_compare_btn(self) -> None:
-        if self._delete_mode:
-            # The Compare button's place says Delete (n) while selecting to delete, as Swift's toolbar.
-            count = len(self._delete_indices)
-            self._compare_btn.setText(f"Delete ({count})")
+        if self._selecting_for is not None:
+            # The Compare button's place says Delete (n) or Export (n) while selecting, as Swift's toolbar.
+            count = len(self._selected_indices)
+            self._compare_btn.setText(f"{self._selecting_for.capitalize()} ({count})")
             self._compare_btn.setEnabled(count > 0)
         elif self._compare_mode:
             count = len(self._compare_indices)
@@ -304,8 +320,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
     # ── Compare mode ─────────────────────────────────────────────────────────
 
     def _on_compare_clicked(self) -> None:
-        if self._delete_mode:
+        if self._selecting_for == "delete":
             self._confirm_delete_selected()
+        elif self._selecting_for == "export":
+            self._export_selected()
         elif self._compare_mode:
             # Open comparison
             self._open_comparison()
@@ -345,24 +363,26 @@ class MeasurementsDialog(QtWidgets.QDialog):
                     row.setCompareSelected(selected)
         self._update_compare_btn()
 
-    # ── Delete › Selected… / Duplicates… ─────────────────────────────────────
+    # ── Selected…: Delete's and Export's / Duplicates… ───────────────────────
 
-    def _enter_delete_mode(self) -> None:
-        self._delete_mode = True
-        self._delete_indices.clear()
+    def _enter_select_mode(self, purpose: str) -> None:
+        """Start a select mode for ``purpose`` ("delete" or "export"), nothing ticked. Mirrors Swift
+        startSelection(_:)."""
+        self._selecting_for = purpose
+        self._selected_indices.clear()
         self._rebuild_list()
 
-    def _exit_delete_mode(self) -> None:
-        self._delete_mode = False
-        self._delete_indices.clear()
+    def _exit_select_mode(self) -> None:
+        self._selecting_for = None
+        self._selected_indices.clear()
         self._rebuild_list()
 
-    def _toggle_delete(self, index: int) -> None:
-        if index in self._delete_indices:
-            self._delete_indices.discard(index)
+    def _toggle_selected(self, index: int) -> None:
+        if index in self._selected_indices:
+            self._selected_indices.discard(index)
         else:
-            self._delete_indices.add(index)
-        self._refresh_row_tick(index, index in self._delete_indices)
+            self._selected_indices.add(index)
+        self._refresh_row_tick(index, index in self._selected_indices)
 
     def _confirm(self, title: str, text: str, action: str) -> bool:
         box = QtWidgets.QMessageBox(self)
@@ -374,16 +394,16 @@ class MeasurementsDialog(QtWidgets.QDialog):
         return box.clickedButton() == yes
 
     def _confirm_delete_selected(self) -> None:
-        n = len(self._delete_indices)
+        n = len(self._selected_indices)
         if n == 0:
             return
         if not self._confirm("Delete Selected Measurements?",
                              f"This will permanently delete {n} measurement{'s' if n != 1 else ''}. "
                              "This cannot be undone.", "Delete"):
             return
-        doomed = set(self._delete_indices)
-        self._delete_mode = False
-        self._delete_indices.clear()
+        doomed = set(self._selected_indices)
+        self._selecting_for = None
+        self._selected_indices.clear()
         self._compare_indices.clear()
         self._analyzer.delete_measurements(doomed)
         self._rebuild_list()
@@ -416,8 +436,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self.accept()
 
     def _on_done(self) -> None:
-        if self._delete_mode:
-            self._exit_delete_mode()
+        if self._selecting_for is not None:
+            self._exit_select_mode()
         elif self._compare_mode:
             # Cancel compare mode
             self._compare_mode = False
@@ -508,7 +528,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         TDS.set_saved_measurements_filter(value)
         self._rebuild_list()
         self._compare_indices &= set(self._shown)
-        self._delete_indices &= set(self._shown)
+        self._selected_indices &= set(self._shown)
         self._update_compare_btn()
 
     def _show_row_menu(self, m: TapToneMeasurement, row: int, global_pos: QtCore.QPoint) -> None:
@@ -561,15 +581,30 @@ class MeasurementsDialog(QtWidgets.QDialog):
     def _export_all(self) -> None:
         """Export the whole library to a chosen `.guitartap` file — the same content as the
         internal saved_measurements.json, just written to an arbitrary location."""
-        if not self._measurements:
-            return
         import time
-        default = os.path.join(
-            M.last_export_dir(), f"guitartap-library-{int(time.time())}.guitartap"
-        )
+        self._export_measurements(self._measurements, f"guitartap-library-{int(time.time())}", "Export All Measurements")
+
+    def _export_selected(self) -> None:
+        """Export the ticked measurements, in the library's order, to one chosen `.guitartap` file, and leave the
+        select mode. Mirrors Swift confirmSelection(.export)."""
+        import time
+        chosen = [self._measurements[i] for i in sorted(self._selected_indices)]
+        self._exit_select_mode()
+        if len(chosen) == 1:
+            # One measurement is named as its own Export Measurement… names it; several, neutrally.
+            self._export_json(chosen[0])
+        else:
+            self._export_measurements(chosen, f"guitartap-measurements-{int(time.time())}", "Export Selected Measurements")
+
+    def _export_measurements(self, measurements: "list[TapToneMeasurement]", stem: str, title: str) -> None:
+        """Write ``measurements`` as one `.guitartap` file — the form Import reads back — where the user chooses,
+        starting from ``stem``. Mirrors Swift deliverMeasurements(_:filename:as: .export)."""
+        if not measurements:
+            return
+        default = os.path.join(M.last_export_dir(), f"{stem}.guitartap")
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Export All Measurements",
+            title,
             default,
             "GuitarTap files (*.guitartap);;JSON files (*.json);;All files (*)",
         )
@@ -578,7 +613,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         M.update_export_dir(path)
         try:
             with open(path, "w", encoding="utf-8") as f:
-                f.write(M.measurements_to_json(self._measurements))
+                f.write(M.measurements_to_json(measurements))
         except OSError as exc:
             QtWidgets.QMessageBox.warning(self, "Export Failed", M.export_failure_message(exc, path))
 
@@ -673,23 +708,27 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._analyzer.delete_all_measurements()
 
     def _on_import(self) -> None:
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+        """Import the files chosen — one or several — and show the one message for them. The model imports, loads
+        exactly one measurement imported in all, and words the message — mirrors Swift importFiles(_:). The main view
+        follows a load by signal."""
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
             self,
-            "Import Measurement",
+            "Import Measurements",
             M.last_export_dir(),
             "Measurement files (*.json *.guitartap);;All files (*)",
         )
-        if not path:
+        if not paths:
             return
-        M.update_export_dir(path)
-        try:
-            with open(path, "rb") as f:
-                data = f.read()
-            # The model imports, loads a single measurement, and words the message — mirrors
-            # Swift importAndLoadMeasurements(from:). The main view follows the load by signal.
-            msg = self._analyzer.import_and_load_measurements(data)
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(
-                self, "Import Error", self._analyzer.import_error_message(exc, os.path.basename(path)))
-            return
-        QtWidgets.QMessageBox.information(self, "Import Successful", msg)
+        M.update_export_dir(paths[0])
+        files = []
+        for path in paths:
+            try:
+                with open(path, "rb") as f:
+                    files.append(ImportFile(os.path.basename(path), f.read()))
+            except OSError as exc:
+                files.append(ImportFile(os.path.basename(path), exc))
+        report = self._analyzer.import_files(files)
+        if report.imported:
+            QtWidgets.QMessageBox.information(self, "Import Successful", report.message)
+        else:
+            QtWidgets.QMessageBox.warning(self, "Import Error", report.message)

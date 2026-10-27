@@ -8,7 +8,7 @@ Mirrors Swift TapToneAnalyzer+MeasurementManagement.swift.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
@@ -22,6 +22,22 @@ from guitar_tap.views.utilities import palette
 
 if TYPE_CHECKING:
     from .tap_tone_measurement import TapToneMeasurement
+
+
+class ImportFile(NamedTuple):
+    """A file chosen in Import's file picker: its name, and its contents — or why they could not be read. Mirrors
+    Swift ``ImportFile``."""
+
+    name: str
+    contents: "bytes | BaseException"
+
+
+class ImportReport(NamedTuple):
+    """What an import of chosen files says: its message, and whether anything was imported (the success alert) or
+    not (the error alert). Mirrors Swift ``ImportReport``."""
+
+    message: str
+    imported: bool
 
 
 
@@ -145,16 +161,73 @@ class TapToneAnalyzerMeasurementManagementMixin:
         return f'Could not import "{file_name}": {exc}'
 
     @staticmethod
-    def skipped_entries_message(unreadable: list) -> str | None:
+    def skipped_entries_message(unreadable: list, file_name: str | None = None) -> str | None:
         """What an import's message says about the entries it skipped — None when none were: how many,
-        and why when there was one. Mirrors Swift ``skippedEntriesMessage(_:)``."""
+        and why when there was one. ``file_name`` names the file, for an import of several; without it,
+        "the file". Mirrors Swift ``skippedEntriesMessage(_:fileName:)``."""
         if not unreadable:
             return None
+        file = f'"{file_name}"' if file_name is not None else "the file"
         if len(unreadable) > 1:
-            return f"{len(unreadable)} measurements in the file could not be read and were not imported."
+            return f"{len(unreadable)} measurements in {file} could not be read and were not imported."
         reason = TapToneAnalyzerMeasurementManagementMixin.unreadable_reason(unreadable[0])
         reason_text = f" ({reason})" if reason is not None else ""
-        return f"1 measurement in the file could not be read and was not imported{reason_text}."
+        return f"1 measurement in {file} could not be read and was not imported{reason_text}."
+
+    def import_files(self, files: "list[ImportFile]") -> ImportReport:
+        """Import the files chosen in Import's file picker and return the one message the user sees for them, and
+        whether anything was imported.
+
+        One file is imported as ``import_and_load_measurements`` imports it. Several are each added to the library
+        in turn; the message counts the measurements imported and the files they came from, then names each file
+        that could not be imported, and each file with entries that could not be read, with the reason. Exactly
+        one measurement imported in all is loaded, as a single import's is, with its microphone warning; more than
+        one, none is — what is on screen stays. Mirrors Swift ``importFiles(_:)``.
+        """
+        if len(files) == 1:
+            file = files[0]
+            try:
+                if isinstance(file.contents, BaseException):
+                    raise file.contents
+                return ImportReport(self.import_and_load_measurements(file.contents), True)
+            except Exception as exc:
+                return ImportReport(self.import_error_message(exc, file.name), False)
+        self.microphone_warning = None
+        imported: list = []
+        files_imported = 0
+        problems: list[str] = []
+        for file in files:
+            try:
+                if isinstance(file.contents, BaseException):
+                    raise file.contents
+                library = self.import_measurements_from_data(file.contents)
+            except Exception as exc:
+                problems.append(self.import_error_message(exc, file.name))
+                continue
+            imported.extend(library.measurements)
+            files_imported += 1
+            skipped = self.skipped_entries_message(library.unreadable, file.name)
+            if skipped is not None:
+                problems.append(skipped)
+        if not imported:
+            return ImportReport("\n\n".join(problems), False)
+        if len(imported) == 1:
+            # As import_and_load_measurements: the load's warning is folded into this message, not a second dialog.
+            self._suppress_mic_warning_signal = True
+            try:
+                self.load_measurement(imported[0])
+            finally:
+                self._suppress_mic_warning_signal = False
+            message = "Successfully imported and loaded 1 measurement"
+        else:
+            message = (f"Successfully imported {len(imported)} measurements from {files_imported} "
+                       f"file{'s' if files_imported != 1 else ''}")
+        for problem in problems:
+            message += f"\n\n{problem}"
+        if len(imported) == 1 and self.microphone_warning:
+            message += f"\n\n⚠\ufe0e {self.microphone_warning}"
+            self.microphone_warning = None
+        return ImportReport(message, True)
 
     def import_and_load_measurements(self, data: bytes) -> str:
         """Import a ``.guitartap`` file and return the one message the user sees for it.

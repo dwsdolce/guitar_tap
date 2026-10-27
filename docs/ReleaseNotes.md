@@ -5,7 +5,7 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
-<!-- Notes reviewed through commit b3a98dd (2026-10-25). The next update reads only `git log b3a98dd..HEAD`, then moves this line to the newest commit it covered. -->
+<!-- Notes reviewed through commit 86de6f7 (2026-10-26). The next update reads only `git log 86de6f7..HEAD`, then moves this line to the newest commit it covered. -->
 
 ---
 
@@ -18,6 +18,13 @@
 ### Sort, Filter and Delete in Saved Measurements
 
 - A new **Sort & Filter** menu sorts the list as added, by date, name or type (choose the same again to reverse it), or shows one type only — comparisons included. Your choice is remembered. **Delete All** is now a **Delete** menu: **All**, **Duplicates** (every later copy of a measurement, keeping the first) or **Selected** (tick the measurements to delete). The list itself always keeps the order the measurements were added.
+
+### Export Selected, and Importing Several Files
+
+- Saved Measurements' **Export** menu exports all your measurements (**Export All…**) or only the ones you select (**Export Selected…**), as one `.guitartap` file.
+- **Import…** takes several files at once, with one message for all of them. A single measurement is loaded, as before; several are added to the list.
+- Analysis Results has one **Export** button in place of Export Spectrum and Export PDF; its menu has **Export Spectrum…** and **Export PDF Report…**.
+- Every menu item that opens a dialog ends in "…", and the Delete menu's items have icons.
 
 ### Chart Menu for a Comparison
 
@@ -43,11 +50,11 @@
 
 ## Improvements
 
-### The Linux AppImage
+### Linux: AppImage, .deb and .rpm
 
 - The AppImage now runs on Ubuntu 22.04 and later (and other distributions of that age) and needs nothing installed — not libfuse2, PortAudio or libxcb-cursor0. It uses your system's own sound setup (PipeWire or PulseAudio), and its file dialogs show network and remote places.
 - Guitar Tap starts even on a system with no sound server, and reports the audio input as unavailable.
-- The AppImage is attached to each release on GitHub.
+- Besides the AppImage, each release on GitHub has a `.deb` (Ubuntu, Debian, Linux Mint) and an `.rpm` (Fedora), which install Guitar Tap into the applications menu; the User Manual's §2.1 says how. Each release also lists every file's SHA-256 checksum (`SHA256SUMS`).
 
 ### Windows: Taps No Longer Suppressed by Audio Enhancements
 

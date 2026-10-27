@@ -396,8 +396,8 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Analysis Results",
         "The Analysis Results panel shows the peak list, decay time, plate properties, "
-        "quality rating, and (for Plate mode) the Gore target thickness. It also "
-        "contains Export Spectrum and Export PDF Report buttons. The panel is permanently "
+        "quality rating, and (for Plate mode) the Gore target thickness. It also has an "
+        "Export button whose menu exports the spectrum image or the PDF report. The panel is permanently "
         "visible on the right side of the window.",
         ["mdi.file-document-outline"]
     ))
@@ -460,12 +460,13 @@ def _build_help_html() -> str:
         "Lists all saved measurements. Double-click a row to load the measurement "
         "into the main view &mdash; the measurements window closes automatically after "
         "loading. Click a row&rsquo;s &#8943; button or right-click it to access: Load into View, View Details, Edit Name "
-        "&amp; Notes, Export Measurement (saves the .guitartap file via a save dialog), "
-        "Export Spectrum (saves the chart image), Export PDF Report, or Delete. Use "
-        "Import Measurement to load a .guitartap file from disk or another device. "
-        "Use Export All to write your whole library to a single .guitartap file "
-        "&mdash; for backing it up or moving the complete set of measurements to "
-        "another platform; re-import it with Import Measurement. Use Sort &amp; "
+        "&amp; Notes, Export Measurement&hellip; (saves the .guitartap file via a save dialog), "
+        "Export Spectrum&hellip; (saves the chart image), Export PDF Report&hellip;, or Delete. Use "
+        "Import&hellip; to load one or more .guitartap files at once &mdash; a single measurement "
+        "is loaded into the main view; several are only added to the list. Use Export to "
+        "write all your measurements, or the ones you select, to a single .guitartap file "
+        "&mdash; for backing them up or moving them to another platform; re-import it "
+        "with Import&hellip;. Use Sort &amp; "
         "Filter to sort the list as added, by date, name or type (choose the same "
         "key again to reverse it), or to show one type only; the choice is "
         "remembered. Delete removes all measurements, the duplicates (keeping the "
@@ -679,12 +680,12 @@ def _build_help_html() -> str:
     parts.append(_row(
         "PDF Reports",
         "Each saved measurement can generate a PDF report containing the spectrum chart, "
-        "peak table, and analysis summary. Open Measurements, select a measurement, then "
-        "use the PDF export button. Saved comparison records generate a comparison PDF "
+        "peak table, and analysis summary. Open Measurements, open a measurement&rsquo;s "
+        "menu, then choose Export PDF Report&hellip;. Saved comparison records generate a comparison PDF "
         "showing the overlay spectrum and an Air / Top / Back frequency table for each "
         "spectrum. A comparison PDF can also be exported directly from the main view "
-        "while a live comparison is active, using Export PDF Report in the Analysis "
-        "Results panel."
+        "while a live comparison is active, using the Analysis Results panel&rsquo;s "
+        "Export button."
     ))
     parts.append(_row(
         "Zooming the Spectrum",

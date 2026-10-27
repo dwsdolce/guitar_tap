@@ -1,12 +1,17 @@
 {
  "slug": "test/saved-measurement-menu",
- "about": "A saved measurement's menu — from its ⋯ or a right-click in Saved Measurements — in every edition: the same items, words, order and icons. 'groups' are its items between separators, in order; each item names what it does ('action'), its words ('title'), Swift's SF Symbol ('sfSymbol') and the Material Design icon Python and the web draw ('mdi', as Python names it without 'mdi.'). 'macOSOnly' marks the item only the Mac edition has (it saves the file through a save dialog; the others' Export Measurement already does).",
+ "about": "A saved measurement's menu — from its ⋯, a right-click or a long press in Saved Measurements — in every edition: its items, words, order and icons. 'groups' are its items between separators, in order; each item names what it does ('action'), its words on each platform ('titles': 'mac' and 'ios' are Swift's, 'python' and 'web' the others' — an item with no title for a platform is not on that platform's menu, and a group left empty is not shown), Swift's SF Symbol ('sfSymbol') and the Material Design icon Python and the web draw ('mdi', as Python names it without 'mdi.'; null for an item they do not have). Export writes the file through a save dialog; Share opens the share sheet, which only Swift has. An item ends in '…' when it needs more from the user before it is done, except on iOS and iPadOS (style guide S9).",
  "groups": [
   [
    {
     "id": "SM1",
     "action": "load",
-    "title": "Load into View",
+    "titles": {
+     "mac": "Load into View",
+     "ios": "Load into View",
+     "python": "Load into View",
+     "web": "Load into View"
+    },
     "sfSymbol": "arrow.down.doc",
     "mdi": "file-download-outline"
    }
@@ -15,52 +20,105 @@
    {
     "id": "SM2",
     "action": "details",
-    "title": "View Details",
+    "titles": {
+     "mac": "View Details",
+     "ios": "View Details",
+     "python": "View Details",
+     "web": "View Details"
+    },
     "sfSymbol": "eye",
     "mdi": "eye-outline"
    },
    {
     "id": "SM3",
     "action": "edit",
-    "title": "Edit Name & Notes",
+    "titles": {
+     "mac": "Edit Name & Notes",
+     "ios": "Edit Name & Notes",
+     "python": "Edit Name & Notes",
+     "web": "Edit Name & Notes"
+    },
     "sfSymbol": "pencil",
     "mdi": "pencil-outline"
-   },
+   }
+  ],
+  [
    {
     "id": "SM4",
     "action": "exportMeasurement",
-    "title": "Export Measurement",
+    "titles": {
+     "mac": "Export Measurement…",
+     "python": "Export Measurement…",
+     "web": "Export Measurement…"
+    },
     "sfSymbol": "doc.badge.arrow.up",
     "mdi": "file-export-outline"
    },
    {
     "id": "SM5",
-    "action": "saveToDisk",
-    "title": "Save Measurement to Disk…",
-    "sfSymbol": "arrow.down.doc",
-    "mdi": null,
-    "macOSOnly": true
-   },
-   {
-    "id": "SM6",
     "action": "exportSpectrum",
-    "title": "Export Spectrum",
+    "titles": {
+     "mac": "Export Spectrum…",
+     "python": "Export Spectrum…",
+     "web": "Export Spectrum…"
+    },
     "sfSymbol": "chart.line.uptrend.xyaxis",
     "mdi": "chart-line"
    },
    {
-    "id": "SM7",
+    "id": "SM6",
     "action": "exportPDF",
-    "title": "Export PDF Report",
+    "titles": {
+     "mac": "Export PDF Report…",
+     "python": "Export PDF Report…",
+     "web": "Export PDF Report…"
+    },
     "sfSymbol": "doc.richtext",
     "mdi": "file-pdf-box"
    }
   ],
   [
    {
+    "id": "SM7",
+    "action": "shareMeasurement",
+    "titles": {
+     "mac": "Share Measurement…",
+     "ios": "Share Measurement"
+    },
+    "sfSymbol": "doc.badge.arrow.up",
+    "mdi": null
+   },
+   {
     "id": "SM8",
+    "action": "shareSpectrum",
+    "titles": {
+     "mac": "Share Spectrum…",
+     "ios": "Share Spectrum"
+    },
+    "sfSymbol": "chart.line.uptrend.xyaxis",
+    "mdi": null
+   },
+   {
+    "id": "SM9",
+    "action": "sharePDF",
+    "titles": {
+     "mac": "Share PDF Report…",
+     "ios": "Share PDF Report"
+    },
+    "sfSymbol": "doc.richtext",
+    "mdi": null
+   }
+  ],
+  [
+   {
+    "id": "SM10",
     "action": "delete",
-    "title": "Delete",
+    "titles": {
+     "mac": "Delete",
+     "ios": "Delete",
+     "python": "Delete",
+     "web": "Delete"
+    },
     "sfSymbol": "trash",
     "mdi": "trash-can-outline"
    }

@@ -59,6 +59,9 @@ class _Edges:
     def get_open(self, *_args, **_kwargs):
         return self.open_path, ""
 
+    def get_open_many(self, *_args, **_kwargs):
+        return [self.open_path], ""
+
     def get_save(self, _parent=None, _caption="", directory="", *_args, **_kwargs):
         path = self.out_dir / f"{self.prefix}{Path(directory).name}"
         self.saved.append(path)
@@ -73,6 +76,7 @@ class _Edges:
 def edges(monkeypatch, tmp_path):
     e = _Edges(tmp_path)
     monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", staticmethod(e.get_open))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileNames", staticmethod(e.get_open_many))
     monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", staticmethod(e.get_save))
     for kind in ("information", "warning", "critical"):
         monkeypatch.setattr(QtWidgets.QMessageBox, kind, staticmethod(e.message))
@@ -173,7 +177,7 @@ def _when(qtbot, find, act, timeout_ms: int = 10_000) -> None:
 
 def _modal_list():
     w = QtWidgets.QApplication.activeModalWidget()
-    return w if w is not None and w.isVisible() and _button(w, "Import") is not None else None
+    return w if w is not None and w.isVisible() and _button(w, "Import…") is not None else None
 
 
 def _menu():
@@ -214,7 +218,7 @@ def _import(qtbot, window, edges: _Edges, fixture: str) -> None:
     edges.open_path = str(FIXTURES / fixture)
 
     def in_list(dlg: QtWidgets.QWidget) -> None:
-        _click(_button(dlg, "Import"))
+        _click(_button(dlg, "Import…"))
         _close_list(dlg)
 
     _when(qtbot, _modal_list, in_list)
@@ -242,6 +246,20 @@ def _row_menu_export(qtbot, window, edges: _Edges, item: str) -> None:
     _click(window.open_measurements_btn)
 
 
+def _results_menu(qtbot, window, item: str) -> None:
+    """Analysis Results' Export button → ``item`` from its menu. A push button opens its menu just after the click
+    returns, so this waits until the item has been chosen."""
+    chosen: list[bool] = []
+
+    def choose(menu: QtWidgets.QMenu) -> None:
+        _choose(menu, item)
+        chosen.append(True)
+
+    _when(qtbot, _menu, choose)
+    _click(window.results_export_btn)
+    qtbot.waitUntil(lambda: bool(chosen), timeout=10_000)
+
+
 def _saved_once(edges: _Edges, before: int, suffix: str) -> Path:
     new = edges.saved[before:]
     assert len(new) == 1, f"expected one save, got {new}; messages: {edges.messages}"
@@ -255,13 +273,13 @@ def test_export_from_main_window(qtbot, window, edges, name, fixture):
     _import(qtbot, window, edges, fixture)
     edges.export_to(name, "main")
 
-    qtbot.waitUntil(window.export_spectrum_btn.isEnabled, timeout=10_000)
+    qtbot.waitUntil(window.results_export_btn.isEnabled, timeout=10_000)
     before = len(edges.saved)
-    _click(window.export_spectrum_btn)
+    _results_menu(qtbot, window, "Export Spectrum…")
     _saved_once(edges, before, ".png")
 
     before = len(edges.saved)
-    _click(window.export_pdf_btn)
+    _results_menu(qtbot, window, "Export PDF Report…")
     _saved_once(edges, before, ".pdf")
 
 
@@ -272,11 +290,11 @@ def test_export_from_saved_measurements(qtbot, window, edges, name, fixture):
 
     stem = Path(fixture).stem
     before = len(edges.saved)
-    _row_menu_export(qtbot, window, edges, "Export Spectrum")
+    _row_menu_export(qtbot, window, edges, "Export Spectrum…")
     assert _saved_once(edges, before, ".png").stem == f"{edges.prefix}{stem}"
 
     before = len(edges.saved)
-    _row_menu_export(qtbot, window, edges, "Export PDF Report")
+    _row_menu_export(qtbot, window, edges, "Export PDF Report…")
     assert _saved_once(edges, before, ".pdf").stem == f"{edges.prefix}{stem}"
 
 
@@ -286,14 +304,14 @@ def test_main_window_image_is_the_saved_measurements(qtbot, window, edges, name,
     image from both places."""
     _import(qtbot, window, edges, fixture)
     edges.export_to(name, "main")
-    qtbot.waitUntil(window.export_spectrum_btn.isEnabled, timeout=10_000)
+    qtbot.waitUntil(window.results_export_btn.isEnabled, timeout=10_000)
     before = len(edges.saved)
-    _click(window.export_spectrum_btn)
+    _results_menu(qtbot, window, "Export Spectrum…")
     main = _saved_once(edges, before, ".png").read_bytes()
 
     edges.export_to(name, "saved")
     before = len(edges.saved)
-    _row_menu_export(qtbot, window, edges, "Export Spectrum")
+    _row_menu_export(qtbot, window, edges, "Export Spectrum…")
     assert _saved_once(edges, before, ".png").read_bytes() == main
 
 
@@ -302,13 +320,13 @@ def test_taps_view_does_not_change_the_exports(qtbot, window, edges):
     whether the Taps view is on or off."""
     _import(qtbot, window, edges, "dws-2024-umik-1-3-tap-swift-mac-1785359425.guitartap")
     edges.export_to("multi-tap", "main")
-    qtbot.waitUntil(window.export_spectrum_btn.isEnabled, timeout=10_000)
+    qtbot.waitUntil(window.results_export_btn.isEnabled, timeout=10_000)
     before = len(edges.saved)
-    _click(window.export_spectrum_btn)
+    _results_menu(qtbot, window, "Export Spectrum…")
     taps_off = _saved_once(edges, before, ".png").read_bytes()
 
     _click(window._multi_tap_toggle_btn)
     assert window.fft_canvas.analyzer.showing_multi_tap_comparison
     before = len(edges.saved)
-    _click(window.export_spectrum_btn)
+    _results_menu(qtbot, window, "Export Spectrum…")
     assert _saved_once(edges, before, ".png").read_bytes() == taps_off

@@ -1,0 +1,120 @@
+{
+ "slug": "test/export-menus",
+ "about": "The two other menus that export or share, in every edition: Saved Measurements' library menu ('panel') and Analysis Results' ('analysisResults'). Each has one button — its word on each platform in 'button' ('mac' and 'ios' are Swift's, 'python' and 'web' the others'), its SF Symbol and Material Design icon — and items in groups between separators, as saved-measurement-menu.json: an item with no title for a platform is not on that platform's menu, and a group left empty is not shown. Each item has its icon, as the Delete menu's do: Share's, Export's (a measurement menu's Export Measurement), and Selected's tick (as Delete's Selected…); Analysis Results' items have a measurement menu's icons for the same items. Export writes the file through a save dialog; Share opens the share sheet, which only Swift has; Selected ticks the measurements first, as Delete's Selected… does. '…' as style guide S9.",
+ "panel": {
+  "button": {
+   "mac": "Export",
+   "ios": "Share",
+   "python": "Export",
+   "web": "Export"
+  },
+  "sfSymbol": "square.and.arrow.up",
+  "mdi": "upload-outline",
+  "groups": [
+   [
+    {
+     "id": "PM1",
+     "action": "exportAll",
+     "titles": {
+      "mac": "Export All…",
+      "python": "Export All…",
+      "web": "Export All…"
+     },
+     "sfSymbol": "doc.badge.arrow.up",
+     "mdi": "file-export-outline"
+    },
+    {
+     "id": "PM2",
+     "action": "exportSelected",
+     "titles": {
+      "mac": "Export Selected…",
+      "python": "Export Selected…",
+      "web": "Export Selected…"
+     },
+     "sfSymbol": "checkmark.circle",
+     "mdi": "check-circle-outline"
+    }
+   ],
+   [
+    {
+     "id": "PM3",
+     "action": "shareAll",
+     "titles": {
+      "mac": "Share All…",
+      "ios": "Share All"
+     },
+     "sfSymbol": "square.and.arrow.up",
+     "mdi": null
+    },
+    {
+     "id": "PM4",
+     "action": "shareSelected",
+     "titles": {
+      "mac": "Share Selected…",
+      "ios": "Share Selected"
+     },
+     "sfSymbol": "checkmark.circle",
+     "mdi": null
+    }
+   ]
+  ]
+ },
+ "analysisResults": {
+  "button": {
+   "mac": "Export",
+   "ios": "Share",
+   "python": "Export",
+   "web": "Export"
+  },
+  "sfSymbol": "square.and.arrow.up",
+  "mdi": "upload-outline",
+  "groups": [
+   [
+    {
+     "id": "AR1",
+     "action": "exportSpectrum",
+     "titles": {
+      "mac": "Export Spectrum…",
+      "python": "Export Spectrum…",
+      "web": "Export Spectrum…"
+     },
+     "sfSymbol": "chart.line.uptrend.xyaxis",
+     "mdi": "chart-line"
+    },
+    {
+     "id": "AR2",
+     "action": "exportPDF",
+     "titles": {
+      "mac": "Export PDF Report…",
+      "python": "Export PDF Report…",
+      "web": "Export PDF Report…"
+     },
+     "sfSymbol": "doc.richtext",
+     "mdi": "file-pdf-box"
+    }
+   ],
+   [
+    {
+     "id": "AR3",
+     "action": "shareSpectrum",
+     "titles": {
+      "mac": "Share Spectrum…",
+      "ios": "Share Spectrum"
+     },
+     "sfSymbol": "chart.line.uptrend.xyaxis",
+     "mdi": null
+    },
+    {
+     "id": "AR4",
+     "action": "sharePDF",
+     "titles": {
+      "mac": "Share PDF Report…",
+      "ios": "Share PDF Report"
+     },
+     "sfSymbol": "doc.richtext",
+     "mdi": null
+    }
+   ]
+  ]
+ }
+}

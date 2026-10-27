@@ -1,6 +1,6 @@
 {
  "slug": "test/import-persistence",
- "about": "The saved-measurement library: importing, editing and saving, and the message an import shows. Each case starts with an empty library and a fresh analyzer and runs its 'steps' in order: {\"import\": [names]} imports one .guitartap file holding those measurements (the 'measurements' entries), through the app's import (importAndLoadMeasurements — a single measurement is also loaded); {\"edit\": {entry, name, notes}} edits the library's entry at that position as the Edit sheet does; {\"save\": name} saves the result on screen under that name; {\"deleteAll\": true} deletes every saved measurement, as Delete All does; {\"warning\": text} puts up a microphone warning, as an earlier load would; {\"importFails\": [names], \"file\"?: name, \"message\"?: text} imports a file holding those measurements, as {\"import\"} does, and the import fails (no entry in it can be read); with \"message\", the failed import's message for a file of that name — the words the \"Import Error\" alert shows — is exactly that text. {\"importFailsBare\": name, \"file\"?, \"message\"?} imports a file that is that measurement on its own, not a list of them, and the import fails, as {\"importFails\"}; {\"libraryHolds\": [names]} — the first step — stores a library holding those measurements, as it would be on disk (the web: stored records), and loads it as the app does at launch. 'expect' after the last step: 'library' (the entries' names, in order), 'notes' (their notes, null for none), 'persisted' (the names read back from storage — the natives' file, the web's IndexedDB), 'ids' (each entry's id: a measurement's name for that file's own id, 'new' for one minted since), 'message' / 'messageStartsWith' (the last import's message), 'microphoneWarning' (a warning is up), 'exportHasRowKey' (an exported file carries the library's row key), 'libraryMessageStartsWith' / 'libraryMessage' (what the launch's \"Saved Measurements Unreadable\" alert says; null for no alert), 'keptCopy' (a copy of the library as it was is kept aside — the natives: a file beside it; the web: a storage key). 'only' marks a case about something one side alone has ('natives' or 'web'). Expected values are Swift's.",
+ "about": "The saved-measurement library: importing, editing and saving, and the message an import shows. Each case starts with an empty library and a fresh analyzer and runs its 'steps' in order: {\"import\": [names]} imports one .guitartap file holding those measurements (the 'measurements' entries), through the app's import (importAndLoadMeasurements — a single measurement is also loaded); {\"edit\": {entry, name, notes}} edits the library's entry at that position as the Edit sheet does; {\"save\": name} saves the result on screen under that name; {\"deleteAll\": true} deletes every saved measurement, as Delete All does; {\"warning\": text} puts up a microphone warning, as an earlier load would; {\"importFails\": [names], \"file\"?: name, \"message\"?: text} imports a file holding those measurements, as {\"import\"} does, and the import fails (no entry in it can be read); with \"message\", the failed import's message for a file of that name — the words the \"Import Error\" alert shows — is exactly that text. {\"importFailsBare\": name, \"file\"?, \"message\"?} imports a file that is that measurement on its own, not a list of them, and the import fails, as {\"importFails\"}; {\"importFiles\": [{\"file\": name, \"holds\": [names]}, …]} chooses several files at once in Import's file picker, each holding those measurements, and imports them together (importFiles — one message for all of them); {\"libraryHolds\": [names]} — the first step — stores a library holding those measurements, as it would be on disk (the web: stored records), and loads it as the app does at launch. 'expect' after the last step: 'library' (the entries' names, in order), 'notes' (their notes, null for none), 'persisted' (the names read back from storage — the natives' file, the web's IndexedDB), 'ids' (each entry's id: a measurement's name for that file's own id, 'new' for one minted since), 'message' / 'messageStartsWith' (the last import's message), 'imported' (whether the last importFiles imported anything: the success alert, or the error alert), 'loaded' (the name of the measurement on screen after the last step; null for none), 'microphoneWarning' (a warning is up), 'exportHasRowKey' (an exported file carries the library's row key), 'libraryMessageStartsWith' / 'libraryMessage' (what the launch's \"Saved Measurements Unreadable\" alert says; null for no alert), 'keptCopy' (a copy of the library as it was is kept aside — the natives: a file beside it; the web: a storage key). 'only' marks a case about something one side alone has ('natives' or 'web'). Expected values are Swift's.",
  "measurements": {
   "A": {
    "id": "00000000-0000-0000-0000-0000000000A1",
@@ -652,6 +652,203 @@
     "persisted": [
      "A"
     ]
+   }
+  },
+  {
+   "id": "IF1",
+   "note": "two files chosen at once, one measurement each: both added, in the order chosen; one message counts them and the files; with more than one, none is loaded",
+   "steps": [
+    {
+     "importFiles": [
+      {
+       "file": "a.guitartap",
+       "holds": [
+        "A"
+       ]
+      },
+      {
+       "file": "b.guitartap",
+       "holds": [
+        "B"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "B"
+    ],
+    "persisted": [
+     "A",
+     "B"
+    ],
+    "imported": true,
+    "loaded": null,
+    "message": "Successfully imported 2 measurements from 2 files"
+   }
+  },
+  {
+   "id": "IF2",
+   "note": "two files, one of which cannot be imported: the other is added and, being the only measurement imported, loaded; the message names the file that failed and why",
+   "steps": [
+    {
+     "importFiles": [
+      {
+       "file": "a.guitartap",
+       "holds": [
+        "A"
+       ]
+      },
+      {
+       "file": "bad-id.guitartap",
+       "holds": [
+        "bad-id"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A"
+    ],
+    "persisted": [
+     "A"
+    ],
+    "imported": true,
+    "loaded": "A",
+    "message": "Successfully imported and loaded 1 measurement\n\nCould not import \"bad-id.guitartap\": the file is not a valid GuitarTap measurement (\"not-a-uuid\" in id is not a UUID)."
+   }
+  },
+  {
+   "id": "IF3",
+   "note": "a file of two and a file of one: three measurements from two files",
+   "steps": [
+    {
+     "importFiles": [
+      {
+       "file": "library.guitartap",
+       "holds": [
+        "A",
+        "B"
+       ]
+      },
+      {
+       "file": "a.guitartap",
+       "holds": [
+        "A"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "B",
+     "A"
+    ],
+    "persisted": [
+     "A",
+     "B",
+     "A"
+    ],
+    "imported": true,
+    "loaded": null,
+    "message": "Successfully imported 3 measurements from 2 files"
+   }
+  },
+  {
+   "id": "IF4",
+   "note": "a file with an entry that cannot be read: the rest are added; the message names that file and why",
+   "steps": [
+    {
+     "importFiles": [
+      {
+       "file": "mixed.guitartap",
+       "holds": [
+        "B",
+        "no-spectrum"
+       ]
+      },
+      {
+       "file": "a.guitartap",
+       "holds": [
+        "A"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "B",
+     "A"
+    ],
+    "persisted": [
+     "B",
+     "A"
+    ],
+    "imported": true,
+    "loaded": null,
+    "message": "Successfully imported 2 measurements from 2 files\n\n1 measurement in \"mixed.guitartap\" could not be read and was not imported (no spectrum)."
+   }
+  },
+  {
+   "id": "IF5",
+   "note": "no file can be imported: nothing is added, and the message — the error alert's — names each file and why",
+   "steps": [
+    {
+     "importFiles": [
+      {
+       "file": "bad-id.guitartap",
+       "holds": [
+        "bad-id"
+       ]
+      },
+      {
+       "file": "no-spectrum.guitartap",
+       "holds": [
+        "no-spectrum"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "library": [],
+    "imported": false,
+    "loaded": null,
+    "message": "Could not import \"bad-id.guitartap\": the file is not a valid GuitarTap measurement (\"not-a-uuid\" in id is not a UUID).\n\nCould not import \"no-spectrum.guitartap\": the file is not a valid GuitarTap measurement (no spectrum)."
+   }
+  },
+  {
+   "id": "IF6",
+   "note": "one file chosen is imported as a single import is: its one measurement loaded",
+   "steps": [
+    {
+     "importFiles": [
+      {
+       "file": "a.guitartap",
+       "holds": [
+        "A"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A"
+    ],
+    "persisted": [
+     "A"
+    ],
+    "imported": true,
+    "loaded": "A",
+    "message": "Successfully imported and loaded 1 measurement"
    }
   },
   {
