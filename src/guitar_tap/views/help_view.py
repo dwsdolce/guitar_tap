@@ -647,9 +647,18 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Tap Technique",
         "Use a short, crisp knuckle, fingertip tap, or a bouncy ball on a stick. "
-        "A slow, pressing contact excites fewer overtones and produces a cleaner fundamental. "
+        "The shorter the contact, the cleaner the spectrum: a slow, pressing contact excites fewer overtones and muddies it. "
         "Avoid tapping near the edges &mdash; aim for the centre of the plate or brace in "
-        "Plate and Brace modes and near the bridge area for guitar-body mode surveys."
+        "Plate and Brace modes. On a guitar body, tap the top near the bridge, just off the "
+        "centreline (the centreline is the dipole&rsquo;s node line, and a tap there hardly "
+        "excites it), and the bridge wings."
+    ))
+    parts.append(_row(
+        "Preparing the Guitar",
+        "Strings on or off, at tension or slack, change the frequencies little; added mass "
+        "&mdash; bridge pins, anything attached &mdash; does, so prepare the guitar the same way "
+        "each time you compare. Put foam string dampers between the strings and the fingerboard, "
+        "never over the sound hole: covering it changes the air (Helmholtz) frequency."
     ))
     parts.append(_row(
         "Consistent Mic Position",
@@ -658,16 +667,33 @@ def _build_help_html() -> str:
         "but relative magnitudes are not."
     ))
     parts.append(_row(
+        "Background Noise",
+        "Set Threshold above the room&rsquo;s noise and below your tap &mdash; keep the noise "
+        "floor at least 10 dB under it. Press Pause and watch the live spectrum to see where the "
+        "noise sits. Fans, refrigerator compressors and traffic are the usual culprits: silence "
+        "them, or move away, for measurements you will compare. In Plate and Brace modes the "
+        "analyzer tracks the noise floor itself, listening for a moment after New Tap before it "
+        "detects. (Manual §10.3.)"
+    ))
+    parts.append(_row(
         "Damping Check with Decay Time",
         "The decay time (ring-out) appears in Results. A longer decay on the top plate "
         "typically correlates with lower internal damping &mdash; desirable in a soundboard. "
         "Compare braced vs. unbraced sections this way."
     ))
     parts.append(_row(
-        "Air Mode for Setup",
-        "The Helmholtz air resonance is easily produced by holding the assembled body near "
-        "the microphone and clapping your palm over the sound hole. "
-        "It does not require tapping the wood itself."
+        "Reading the Top Without the Air Mode",
+        "A tap excites the air and top modes together, and their coupling pulls the top&rsquo;s "
+        "frequency away from the wood&rsquo;s own. To read the top alone, block the sound hole "
+        "with a rag or foam, tap, and read the top &mdash; then unblock it: in a normal "
+        "measurement nothing may cover the sound hole. (Manual §10.4.)"
+    ))
+    parts.append(_row(
+        "How Many Taps",
+        "Guitar body: 3 taps &mdash; the top near the bridge, just off the centreline, then each "
+        "bridge wing; some luthiers take up to 10. Plate or brace: 3&ndash;5 taps &mdash; the "
+        "same number for every phase, the diagonal (fLC) included. The fLC resonance is weaker, "
+        "so keep that tap&rsquo;s position consistent from tap to tap. (Manual §10.6.)"
     ))
     parts.append(_row(
         "Comparing Guitar Measurements",
