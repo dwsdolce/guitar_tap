@@ -155,7 +155,8 @@ class MeasurementRowView(QtWidgets.QWidget):
             n = len(m.comparison_entries) if m.comparison_entries else 0
             meta = QtWidgets.QLabel(f"{n} spectra compared")
         else:
-            parts: list[str] = [f"{len(m.peaks)} peaks"]
+            count = len(m.peaks)
+            parts: list[str] = [f"{count} {'peak' if count == 1 else 'peaks'}"]
             ratio = m.tap_tone_ratio
             if ratio is not None:
                 parts.append(f"Ratio: {fp.string(ratio, fp.DECAY_RATIO)}")
