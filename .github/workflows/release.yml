@@ -1,6 +1,6 @@
-# The release builds made on GitHub — the Linux AppImage, .deb and .rpm and the Windows installer — attached to a
-# draft GitHub release with their SHA256SUMS, or kept as the run's artifacts. The macOS .dmg (signed and notarised with the owner's Apple credentials)
-# and the PDFs are built by hand (packaging/build_mac) and uploaded to the draft.
+# The release builds made on GitHub — the Linux AppImage, .deb and .rpm, the Windows installer, and the macOS .dmg
+# with the release-notes and Quick Start PDFs — attached to a draft GitHub release with their SHA256SUMS, or kept as
+# the run's artifacts. The user manual's PDF, built in the GuitarTap repository, is uploaded to the draft by hand.
 #
 # Run by hand (Actions → Release → Run workflow), for:
 # - a release tag: builds the tag; with "draft" it creates the tag's draft release with both files (or adds them to
@@ -259,12 +259,137 @@ jobs:
           path: installer/Guitar_Tap_V*.exe
           if-no-files-found: error
 
+  # The macOS .dmg, signed with the owner's Developer ID and notarised by Apple, and the two PDFs packaging/build_mac
+  # makes with it — built by build_mac as on the owner's Mac. Its credentials are the secrets of the macos-signing
+  # environment, which waits for the owner's approval before a run may use them: the Developer ID Application
+  # certificate with its private key (MACOS_CERTIFICATE_P12, base64, and MACOS_CERTIFICATE_PASSWORD) and an App Store
+  # Connect API key for notarisation (APPSTORE_API_KEY_P8, APPSTORE_API_KEY_ID, APPSTORE_API_ISSUER_ID). They go
+  # into a keychain of the run's own, deleted at the end. The certificate lasts a year: when it is renewed, its secret
+  # is replaced (RELEASE-CHECKLIST.md).
+  macos:
+    runs-on: macos-latest
+    environment: macos-signing
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      # create-dmg for the .dmg; Pango for the Quick Start (WeasyPrint); pandoc and BasicTeX's xelatex for the
+      # release notes.
+      - name: Tools
+        run: |
+          brew install create-dmg pango pandoc
+          brew install --cask basictex
+          echo "/Library/TeX/texbin" >> "$GITHUB_PATH"
+
+      - name: Python environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-packaging.txt
+          .venv/bin/python -m pip install -e . --no-deps
+
+      # A keychain of the run's own, the default for the run, holding the certificate, its private key, Apple's G2
+      # Developer ID intermediate it is issued from, and the notarisation profile build_mac names.
+      - name: Signing keychain
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPSTORE_API_KEY_P8: ${{ secrets.APPSTORE_API_KEY_P8 }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm "$RUNNER_TEMP/certificate.p12"
+          curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$keychain"
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/ { print $2; exit }')
+          [ -n "$identity" ] || { echo "No valid Developer ID Application identity in the keychain"; exit 1; }
+          echo "CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          printf '%s' "$APPSTORE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+          xcrun notarytool store-credentials guitar-tap-notary --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$APPSTORE_API_KEY_ID" --issuer "$APPSTORE_API_ISSUER_ID" --keychain "$keychain"
+          rm "$RUNNER_TEMP/AuthKey.p8"
+          echo "NOTARY_PROFILE=guitar-tap-notary" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      # The PDFs, then PyInstaller, the .dmg, signing, notarisation and stapling.
+      - name: Build
+        run: ./packaging/build_mac
+
+      - name: Check the version and build
+        run: packaging/check_release_build "Guitar_Tap_V*.dmg"
+
+      # Signed by the owner's team, notarised, the ticket stapled; Gatekeeper accepts the .dmg and the app in it.
+      - name: Check the signature and notarisation
+        run: |
+          dmg=$(ls Guitar_Tap_V*.dmg)
+          xcrun stapler validate "$dmg"
+          spctl -a -t open --context context:primary-signature -vv "$dmg"
+          codesign -dvv "$dmg" 2>&1 | grep -q "TeamIdentifier=43QHHT3XK2" || { echo "Not signed by team 43QHHT3XK2"; exit 1; }
+          mount=$(hdiutil attach -nobrowse -readonly "$dmg" | awk -F'\t' '/\/Volumes\// { print $NF; exit }')
+          spctl -a -t exec -vv "$mount/Guitar Tap.app"
+          codesign --verify --deep --strict "$mount/Guitar Tap.app"
+          hdiutil detach "$mount"
+
+      # The built app starts and stays up, with no error — off-screen, in a settings sandbox of its own.
+      - name: Start test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          GT_TEST_SANDBOX: "1"
+        run: |
+          set +e
+          "dist/Guitar Tap.app/Contents/MacOS/guitar-tap" > start.log 2>&1 &
+          pid=$!
+          sleep 20
+          kill -0 "$pid" 2>/dev/null; running=$?
+          kill "$pid" 2>/dev/null
+          tail -30 start.log
+          [ "$running" = 0 ] || { echo "It was not running after 20 seconds"; exit 1; }
+          if grep -q "Traceback" start.log; then echo "An error was raised while starting"; exit 1; fi
+
+      - name: Remove the signing keychain
+        if: ${{ always() }}
+        run: |
+          [ -z "${SIGNING_KEYCHAIN:-}" ] || security delete-keychain "$SIGNING_KEYCHAIN"
+
+      # The release's files side by side, as the draft lists them.
+      - name: Collect the files
+        run: |
+          mkdir release-files
+          cp Guitar_Tap_V*.dmg docs/ReleaseNotes-*.pdf docs/GuitarTap-Quick-Start-Guide.pdf release-files/
+          ls -l release-files
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: guitar-tap-macos
+          path: release-files/*
+          if-no-files-found: error
+
   # The draft release: a draft for the release's tag, created at the built commit; GitHub creates the tag only when
   # the draft is published (an existing tag stays as it is). An existing draft gets the files, replacing ones of the
   # same name. SHA256SUMS lists the files this workflow attaches.
   draft:
     if: ${{ inputs.draft }}
-    needs: [linux, windows]
+    needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     defaults:
       run:

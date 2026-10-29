@@ -5,14 +5,14 @@
 # release. Only the NEWEST section carries the placeholders, filled here from git:
 #   {{version}} = marketing version  (src/guitar_tap/version)
 #   {{build}}   = git commit count at HEAD                     (this release's build)
-#   {{since}}   = git commit count at the previous release tag (the "since" build)
+#   {{since}}   = git commit count at the previous release's tag (the "since" build): the newest tag
+#                 other than this version's, so it is the same before this release is tagged and after
 # Every older section keeps its literal, frozen numbers. When you cut the next release you
 # hand-edit this file: freeze the current top section (replace its placeholders with the
 # literals it shipped as) and add a new top section with fresh placeholders.
 #
-# ORDERING: run this BEFORE tagging the new release. {{since}} is the commit count at the
-# latest existing tag, which must still be the PREVIOUS release — this script refuses to run
-# if the newest tag already equals the current version.
+# Once this version is tagged, only the tagged commit builds its notes: a later commit would carry
+# this version's notes with a build number that never shipped.
 #
 # Output: docs/ReleaseNotes-<version>-<build>.md (the stamped markdown pandoc reads) and .pdf.
 #
@@ -47,16 +47,17 @@ SRC="docs/ReleaseNotes.md"
 VERSION="$(cat src/guitar_tap/version)"
 BUILD="$(git rev-list --count HEAD)"
 
-LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null)" || {
-    echo "generate_release_notes.sh: no git tags found — cannot derive the 'since' build." >&2
+if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null \
+        && [ "$(git rev-parse "$VERSION^{commit}")" != "$(git rev-parse HEAD)" ]; then
+    echo "generate_release_notes.sh: $VERSION is tagged at another commit than the one being built." >&2
+    echo "  Build the tagged commit, or move to the next version (RELEASE-CHECKLIST.md §6)." >&2
+    exit 1
+fi
+LAST_TAG="$(git describe --tags --abbrev=0 --exclude "$VERSION" 2>/dev/null)" || {
+    echo "generate_release_notes.sh: no earlier release tag found — cannot derive the 'since' build." >&2
     echo "  Tag the previous release (bare version, e.g. 1.0.1) so 'What's New Since Build N' can be computed." >&2
     exit 1
 }
-if [ "$LAST_TAG" = "$VERSION" ]; then
-    echo "generate_release_notes.sh: the latest tag ($LAST_TAG) already equals the current version." >&2
-    echo "  Generate the notes BEFORE tagging this release, or the 'Since Build' number is wrong." >&2
-    exit 1
-fi
 SINCE="$(git rev-list --count "$LAST_TAG")"
 
 OUT_MD="docs/ReleaseNotes-${VERSION}-${BUILD}.md"

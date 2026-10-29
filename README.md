@@ -135,10 +135,12 @@ Then run the platform script from the repository root:
 
 ### Platform-specific tooling
 
-**Linux (AppImage, .deb, .rpm) and Windows (installer):** a release's Linux packages and Windows installer are built
-by GitHub Actions (`.github/workflows/release.yml`, run by hand for the tag: Actions → Release → Run workflow) and
-attached to its draft release with their `SHA256SUMS` — the Linux ones on Ubuntu 22.04, the oldest supported LTS,
-since the built app starts only on Linux as new as the machine it was built on. Run for a branch or commit, it keeps them as the run's artifacts, or puts them on
+**Linux (AppImage, .deb, .rpm), Windows (installer) and macOS (.dmg):** a release's files are built by GitHub
+Actions (`.github/workflows/release.yml`, run by hand for the tag: Actions → Release → Run workflow) and attached to
+its draft release with their `SHA256SUMS` — the Linux ones on Ubuntu 22.04, the oldest supported LTS, since the
+built app starts only on Linux as new as the machine it was built on; the macOS `.dmg` signed and notarised with
+the owner's Developer ID, kept in the repository's `macos-signing` environment, which asks the owner's approval
+before a run may use it. Run for a branch or commit, it keeps them as the run's artifacts, or puts them on
 a test draft (`release-test-<n>`) to delete. To build one locally, `build_linux` invokes the current `appimagetool`, whose
 runtime needs no `libfuse2` on the user's system:
 	- `wget -O ~/bin/appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage`
@@ -151,7 +153,9 @@ runtime needs no `libfuse2` on the user's system:
 
 **Windows:** the installer step uses [Inno Setup 6](https://jrsoftware.org/isinfo.php) — install it in its default folder (`C:\Program Files (x86)\Inno Setup 6`), where `build_win` runs `ISCC.exe`. The Windows build is not code-signed.
 
-**macOS:** code signing and notarization require an Apple Developer ID. The spec file ([packaging/guitar-tap.spec](packaging/guitar-tap.spec)) references the certificate identity — adjust it for your own developer account.
+**macOS:** code signing and notarization require an Apple Developer ID. `build_mac` reads the identity and the
+notarytool profile from `~/.config/macsign.env` (`CODESIGN_IDENTITY`, `NOTARY_PROFILE`), outside the repository;
+without it the build is unsigned.
 
 ## Parity
 
