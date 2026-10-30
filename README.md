@@ -50,7 +50,7 @@ modern browser — all three are open source (see [Related projects](#related-pr
 
 ## Running from Installer
 
-Prebuilt installers for macOS (Apple Silicon), Windows and Linux (a `.deb`, an `.rpm` and an AppImage) are on the
+Prebuilt installers for macOS 15 or later (Apple Silicon), Windows and Linux (a `.deb`, an `.rpm` and an AppImage) are on the
 [releases page](https://github.com/dwsdolce/guitar_tap/releases), with their `SHA256SUMS`; how to install each is in
 the User Manual's §2.1. An installed app needs nothing else on any platform: Python, Qt and PortAudio are inside it.
 The macOS installer runs on systems newer than Big Sur (11.0), due to the end of life of the earlier systems; the Linux

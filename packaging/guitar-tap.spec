@@ -138,6 +138,7 @@ app = BUNDLE(coll,
       'CFBundleDisplayName': 'Guitar Tap',
       'CFBundleVersion': package_version,          # e.g. "1.0.245"
       'CFBundleShortVersionString': package_version,  # e.g. "1.0.245"
+      'LSMinimumSystemVersion': '15.0',
       'NSPrincipalClass': 'NSApplication',
       'NSAppleScriptEnabled': False,
       'NSRequiresAquaSystemAppearance': 'No',
