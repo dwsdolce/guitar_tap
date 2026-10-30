@@ -142,6 +142,6 @@ app = BUNDLE(coll,
       'NSAppleScriptEnabled': False,
       'NSRequiresAquaSystemAppearance': 'No',
       'NSHighResolutionCapable': 'True',
-      'NSMicrophoneUsageDescription': 'Guitar Tap from the audio inputs to show spectrum and peaks'
+      'NSMicrophoneUsageDescription': 'GuitarTap uses the microphone to analyze tap tones from your guitar.'
     },
 )

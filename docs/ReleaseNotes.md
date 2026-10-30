@@ -5,7 +5,7 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
-<!-- Notes reviewed through commit cde1f9a (2026-10-27). The next update reads only `git log cde1f9a..HEAD`, then moves this line to the newest commit it covered. -->
+<!-- Notes reviewed through commit 1af04c6 (2026-10-30). The next update reads only `git log 1af04c6..HEAD`, then moves this line to the newest commit it covered. -->
 
 ---
 
@@ -145,6 +145,7 @@
 
 ## Bug Fixes
 
+- **macOS: Guitar Tap now asks for the microphone.** It could report that microphone access was required without ever asking, and without appearing in System Settings' Microphone list.
 - **A silent microphone is now noticed.** If the input keeps running but delivers no signal (an unplugged hub, a muted device, input volume at zero, after sleep), the status bar says "No audio input — check the microphone connection" and Guitar Tap recovers once the microphone is back.
 - **A microphone change no longer wipes a finished measurement.**
 - **Unplugging a microphone** could leave the app on the wrong device or freeze it, and a microphone connected afterwards could stay invisible.
