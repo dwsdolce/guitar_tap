@@ -348,6 +348,7 @@ jobs:
           mount=$(hdiutil attach -nobrowse -readonly "$dmg" | awk -F'\t' '/\/Volumes\// { print $NF; exit }')
           spctl -a -t exec -vv "$mount/Guitar Tap.app"
           codesign --verify --deep --strict "$mount/Guitar Tap.app"
+          codesign -d --entitlements - "$mount/Guitar Tap.app" 2>/dev/null | grep -q "com.apple.security.device.audio-input" || { echo "No audio-input entitlement"; exit 1; }
           hdiutil detach "$mount"
 
       # The built app starts and stays up, with no error — off-screen, in a settings sandbox of its own.

@@ -6,10 +6,12 @@
              Mac App Store), so the App Sandbox is intentionally NOT enabled.
              Sandboxing blocked reading user-selected .guitartap files in the
              PyInstaller/PySide6 build (open panel grant not reaching open()).
-             Microphone access works via TCC using NSMicrophoneUsageDescription
-             in the bundle Info.plist (see packaging/guitar-tap.spec), which does
-             not require the sandbox device.microphone entitlement.
-             Only the hardened-runtime exception CPython needs is kept. -->
+             The hardened runtime refuses the microphone, without asking, unless
+             the app has the audio-input entitlement; macOS then asks with
+             NSMicrophoneUsageDescription from the bundle Info.plist (see
+             packaging/guitar-tap.spec). The other key is the hardened-runtime
+             exception CPython needs. -->
         <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+        <key>com.apple.security.device.audio-input</key><true/>
     </dict>
 </plist>
