@@ -5,7 +5,16 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
-<!-- Notes reviewed through commit 4c7d28b (2026-10-30). The next update reads only `git log 4c7d28b..HEAD`, then moves this line to the newest commit it covered. -->
+<!-- Notes reviewed through commit 2b770f1 (2026-10-30). The next update reads only `git log 2b770f1..HEAD`, then moves this line to the newest commit it covered. -->
+
+---
+
+<!-- TODO(1.1.1): add this release's user-facing changes here before shipping, then delete this comment. -->
+
+---
+
+## Version 1.1.0 · Build 704
+### What's New Since Build 482
 
 ---
 
